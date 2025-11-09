@@ -6,8 +6,8 @@ This is a full-stack pizza delivery application built using the **MERN Stack** (
 
 ## 🔗 Live Demo
 
-> 🚀 Deployed at: ![Client Side](https://pds-client-gamma.vercel.app/) 
-      ![Admin Panel](https://pds-admin-ten.vercel.app/)
+> 🚀 Deployed at: [Client Side](https://pds-client-gamma.vercel.app/)
+      [Admin Panel](https://pds-admin-ten.vercel.app/)
 
 ---
 ## 📸 SnapShots
