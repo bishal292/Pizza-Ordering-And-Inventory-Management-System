@@ -3,7 +3,7 @@ import { Cart } from "../../db/models/CartModel.js";
 import { User } from "../../db/models/UserModel.js";
 import { Inventory } from "../../db/models/InventoryModel.js";
 import { isValidObjectId } from "mongoose";
-import { calculatePrice } from "../../utils/util-functions.js";
+import { calculatePrice } from "../../utils/pizza-pricing.js";
 import {
   checkOrderStatus,
   checkPayment,

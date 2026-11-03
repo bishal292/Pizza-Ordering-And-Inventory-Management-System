@@ -76,11 +76,15 @@ This is a full-stack pizza delivery application built using the **MERN Stack** (
 ## 📂 Project Structure
 
 ```
-
-/Admin           # React frontend for Admin Pages
-/Client          # React frontend for Client(Users)
-/Server          # Express backend
+Admin/           # React frontend for admin pages
+client/          # React frontend for customers
+Server/          # Express API
 ```
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md), [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md),
+[CODE_GUIDELINES.md](./CODE_GUIDELINES.md), and
+[REFACTORING_REPORT.md](./REFACTORING_REPORT.md) for architecture, contribution,
+and refactoring details.
 
 ---
 
@@ -173,7 +177,7 @@ npm run dev
 #### Client
 
 ```bash
-cd Client
+cd client
 npm install
 cp .env.example .env    # Fill in required environment Variables as guided in the .env.example
 npm run dev

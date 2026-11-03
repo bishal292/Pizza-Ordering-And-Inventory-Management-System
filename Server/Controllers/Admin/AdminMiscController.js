@@ -5,10 +5,9 @@ import { Pizza } from "../../db/models/PizzaModels.js";
 import { User } from "../../db/models/UserModel.js";
 import { Cart } from "../../db/models/CartModel.js";
 import { Order } from "../../db/models/Orders.js";
-import { getFormattedCartItems, upload } from "../../utils/util-functions.js";
+import { deleteImage, upload } from "../../Services/ImageStorage.js";
+import { getFormattedCartItems } from "../../utils/cart-formatting.js";
 import { compare } from "bcrypt";
-import fs from "fs";
-import path from "path";
 
 // Admin Dashboard
 // SUGGESTION: Razorpay method to get total revenue for lifetime and today's can be used for actual earning's data via online
@@ -331,13 +330,6 @@ export const imageUpload = async (req, res, next) => {
     res.status(500).send("Internal Server Error");
   }
 };
-export const deleteImage = async (image) => {
-  const imagePath = path.join(process.cwd(), 'uploads', image);
-  if (fs.existsSync(imagePath)) {
-    fs.unlinkSync(imagePath);
-  }
-};
-
 export const addPizza = async (req, res) => {
   try {
     const userId = req.userId;

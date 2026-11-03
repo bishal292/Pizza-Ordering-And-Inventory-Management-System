@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { Inventory } from "./InventoryModel.js";
 
 const pizzaSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -26,6 +25,7 @@ pizzaSchema.pre('save', async function(next) {
   const inventoryItems = [ pizza?.base, ...pizza?.sauce, ...pizza?.cheese, ...pizza?.toppings];
   
   try {
+    const Inventory = mongoose.model("Inventory");
     const items = await Inventory.find({ _id: { $in: inventoryItems } });
     const isAvailable = items.every(item => item.status === 'available');
     pizza.status = isAvailable ? 'available' : 'unavailable';

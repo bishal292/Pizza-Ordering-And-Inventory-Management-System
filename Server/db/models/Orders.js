@@ -3,10 +3,8 @@ import { Inventory } from "./InventoryModel.js";
 import {
   adminSocketMap,
   io,
-  setupSocket,
   userSocketMap,
 } from "../../utils/Socket.js";
-import { server } from "../../index.js";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -97,9 +95,6 @@ orderSchema.post("save", async function (doc, next) {
     if (doc.isStockDecrement) {
       return next();
     }
-    if (!io) {
-      await setupSocket(server);
-    }
     const adminSockets = [...adminSocketMap.values()];
     if (adminSockets.length > 0) {
       for (const socketId of adminSockets) {
@@ -175,9 +170,6 @@ orderSchema.post("findOneAndUpdate", async function (doc, next) {
     }
     const userSocket = userSocketMap.get(updatedDoc.userId.toString());
     if (userSocket) {
-      if (!io) {
-        await setupSocket(server);
-      }
       io.to(userSocket).emit("updated-status", {
         status: updatedDoc?.status,
         id: updatedDoc?.dailyOrderId,

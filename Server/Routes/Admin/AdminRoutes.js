@@ -26,7 +26,7 @@ import {
   orderData,
   revenueData,
 } from "../../Controllers/Admin/AdminMiscController.js";
-import { upload } from "../../utils/util-functions.js";
+import { upload } from "../../Services/ImageStorage.js";
 
 const AdminRouter = Router();
 

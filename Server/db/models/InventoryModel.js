@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
-import { Pizza } from "./PizzaModels.js";
-import { sendEmailToAdmins } from "../../utils/util-functions.js";
+import { sendEmailToAdmins } from "../../Services/EmailService.js";
 import { io } from "../../utils/Socket.js"; // Import the socket instance
 
 const inventorySchema = new mongoose.Schema(
@@ -42,6 +41,7 @@ inventorySchema.post("save", async function (doc, next) {
       await doc.save();
 
       // Find all pizzas that use this inventory item
+      const Pizza = mongoose.model("Pizza");
       const pizzasToUpdate = await Pizza.find({
         $or: [
           { base: doc._id }, // Ensure only the _id is used
@@ -115,6 +115,7 @@ inventorySchema.pre("findOneAndDelete", async function (next) {
     }
 
 
+    const Pizza = mongoose.model("Pizza");
     const pizzasToUpdate = await Pizza.find({
       $or: [
         { base: doc._id },

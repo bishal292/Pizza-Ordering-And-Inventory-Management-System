@@ -1,10 +1,10 @@
 import { User } from "../../db/models/UserModel.js";
 import bcrypt from "bcrypt";
+import { sendEmail } from "../../Services/EmailService.js";
 import {
-  createToken,
-  sendEmail,
   checkPasswordStrength,
-} from "../../utils/util-functions.js";
+  createToken,
+} from "../../utils/auth-utils.js";
 import validator from "validator";
 import { configDotenv } from "dotenv";
 import crypto from "crypto";
