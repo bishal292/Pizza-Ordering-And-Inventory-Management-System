@@ -1,10 +1,17 @@
 import mongoose from "mongoose";
-import { Inventory } from "./InventoryModel.js";
-import {
-  adminSocketMap,
-  io,
-  userSocketMap,
-} from "../../utils/Socket.js";
+import DailyOrderSequence from "./DailyOrderSequence.js";
+
+const inventoryMovementSchema = new mongoose.Schema(
+  {
+    inventoryItem: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Inventory",
+      required: true,
+    },
+    quantity: { type: Number, required: true, min: 1 },
+  },
+  { _id: false }
+);
 
 const orderSchema = new mongoose.Schema(
   {
@@ -28,6 +35,23 @@ const orderSchema = new mongoose.Schema(
             { type: mongoose.Schema.Types.ObjectId, ref: "Inventory" },
           ],
         },
+        pizzaSnapshot: {
+          pizzaId: String,
+          name: String,
+          image: String,
+          description: String,
+          size: { name: String },
+          base: { name: String },
+          sauce: [{ name: String }],
+          cheese: [{ name: String }],
+          toppings: [{ name: String }],
+        },
+        customizationsSnapshot: {
+          base: { name: String },
+          sauce: [{ name: String }],
+          cheese: [{ name: String }],
+          toppings: [{ name: String }],
+        },
         quantity: { type: Number, required: true, default: 1 },
         price: { type: Number, required: true }, // Price based on the pizza and customizations
         finalPrice: {
@@ -42,6 +66,19 @@ const orderSchema = new mongoose.Schema(
     totalPrice: { type: Number, required: true },
     orderId: { type: String, required: true, unique: true },
     paymentId: { type: String }, // Removed `unique` constraint
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "paid", "refund_pending", "refunded"],
+      default: "unpaid",
+    },
+    refundId: { type: String },
+    paidAt: { type: Date },
+    refundedAt: { type: Date },
+    inventoryMovements: {
+      type: [inventoryMovementSchema],
+      default: undefined,
+    },
+    stockReserved: { type: Boolean, select: false },
     status: {
       type: String,
       enum: [
@@ -62,177 +99,41 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.statics.generateDailyOrderId = async function () {
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const year = String(now.getFullYear()).slice(-2);
+  const dateKey = `${year}${month}${day}`;
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+  const latestOrder = await this.findOne({
+    createdAt: { $gte: startOfDay, $lte: endOfDay },
+  }).sort({ dailyOrderId: -1 });
+  const datePrefix = `${day}${month}${year}`;
+  const legacySequence = latestOrder
+    ? Number(String(latestOrder.dailyOrderId).slice(datePrefix.length)) || 0
+    : 0;
   try {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, "0");
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const year = String(now.getFullYear()).slice(-2);
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const lastOrder = await this.findOne({
-      createdAt: { $gte: startOfDay, $lt: endOfDay },
-    }).sort({ dailyOrderId: -1 });
-
-    const dailyCount = lastOrder
-      ? parseInt(lastOrder?.dailyOrderId.toString().slice(-4) || 0) + 1
-      : 1;
-
-    const formattedCount = String(dailyCount).padStart(4, "0");
-    return parseInt(`${day}${month}${year}${formattedCount}`);
+    await DailyOrderSequence.updateOne(
+      { _id: dateKey },
+      { $setOnInsert: { sequence: legacySequence } },
+      { upsert: true }
+    );
   } catch (error) {
-    console.error("Error generating dailyOrderId:", error);
-    throw error;
+    if (error.code !== 11000) throw error;
   }
+  await DailyOrderSequence.updateOne(
+    { _id: dateKey },
+    { $max: { sequence: legacySequence } }
+  );
+  const sequence = await DailyOrderSequence.findOneAndUpdate(
+    { _id: dateKey },
+    { $inc: { sequence: 1 } },
+    { new: true }
+  );
+  return Number(`${day}${month}${year}${String(sequence.sequence).padStart(4, "0")}`);
 };
-
-orderSchema.post("save", async function (doc, next) {
-  try {
-    if (doc.isStockDecrement) {
-      return next();
-    }
-    const adminSockets = [...adminSocketMap.values()];
-    if (adminSockets.length > 0) {
-      for (const socketId of adminSockets) {
-        io.to(socketId).emit("new-order", {
-          messsage: "New Order Placed",
-          id: doc._id,
-          dailyOrderId: doc.dailyOrderId,
-        });
-      }
-    } else {
-      console.warn("No admin socket available to emit new-order event.");
-    }
-    const bulkOps = [];
-
-    // Prepare batch stock reduction operations
-    for (const item of doc.items) {
-      const quantity = item.quantity;
-
-      // Decrease stock for pizza ingredients
-      const pizza = await mongoose
-        .model("Pizza")
-        .findById(item.pizza)
-        .populate("base sauce cheese toppings")
-        .lean();
-
-      const inventoryItems = [
-        { id: item.customizations.base || pizza.base, decrement: 1 },
-        ...(pizza.sauce || []).map((id) => ({ id, decrement: 5 })),
-        ...(pizza.cheese || []).map((id) => ({ id, decrement: 5 })),
-        ...(pizza.toppings || []).map((id) => ({ id, decrement: 10 })),
-        ...(item.customizations?.sauce || []).map((id) => ({
-          id,
-          decrement: 5,
-        })),
-        ...(item.customizations?.cheese || []).map((id) => ({
-          id,
-          decrement: 5,
-        })),
-        ...(item.customizations?.toppings || []).map((id) => ({
-          id,
-          decrement: 10,
-        })),
-      ].filter(Boolean);
-
-      for (const { id, decrement } of inventoryItems) {
-        bulkOps.push({
-          updateOne: {
-            filter: { _id: id },
-            update: { $inc: { stock: -quantity * decrement } },
-          },
-        });
-      }
-    }
-
-    // Execute batch stock update
-    if (bulkOps.length > 0) {
-      await Inventory.bulkWrite(bulkOps);
-    }
-
-    next();
-  } catch (error) {
-    console.error("Error in order post-save middleware:", error);
-    next(error);
-  }
-});
-
-orderSchema.post("findOneAndUpdate", async function (doc, next) {
-  try {
-    // Fetch the updated document explicitly
-    const updatedDoc = await this.model.findOne(this.getQuery()).lean();
-    if (!updatedDoc) {
-      return next(new Error("Order not found"));
-    }
-    const userSocket = userSocketMap.get(updatedDoc.userId.toString());
-    if (userSocket) {
-      io.to(userSocket).emit("updated-status", {
-        status: updatedDoc?.status,
-        id: updatedDoc?.dailyOrderId,
-        _id: updatedDoc?._id,
-      });
-    }
-
-    if (updatedDoc.status !== "cancelled") {
-      return next();
-    }
-
-    const bulkOps = [];
-
-    // Prepare batch stock increment operations
-    for (const item of updatedDoc.items) {
-      const quantity = item.quantity;
-
-      // Increase stock for pizza ingredients
-      const pizza = await mongoose
-        .model("Pizza")
-        .findById(item.pizza)
-        .populate("base sauce cheese toppings")
-        .lean();
-
-      const inventoryItems = [
-        { id: item.customizations.base || pizza.base, increment: 1 },
-        ...(pizza.sauce || []).map((id) => ({ id, increment: 5 })),
-        ...(pizza.cheese || []).map((id) => ({ id, increment: 5 })),
-        ...(pizza.toppings || []).map((id) => ({ id, increment: 10 })),
-        ...(item.customizations?.sauce || []).map((id) => ({
-          id,
-          increment: 5,
-        })),
-        ...(item.customizations?.cheese || []).map((id) => ({
-          id,
-          increment: 5,
-        })),
-        ...(item.customizations?.toppings || []).map((id) => ({
-          id,
-          increment: 10,
-        })),
-      ].filter(Boolean);
-
-      for (const { id, increment } of inventoryItems) {
-        bulkOps.push({
-          updateOne: {
-            filter: { _id: id },
-            update: { $inc: { stock: quantity * increment } },
-          },
-        });
-      }
-    }
-
-    // Execute batch stock update
-    if (bulkOps.length > 0) {
-      await Inventory.bulkWrite(bulkOps);
-    }
-
-    next();
-  } catch (error) {
-    console.error("Error in order post-update middleware:", error);
-    next(error);
-  }
-});
 
 export const Order = mongoose.model("Order", orderSchema);

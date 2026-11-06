@@ -12,9 +12,12 @@ export const ADMIN_AUTH_LOGOUT = `${AdminAuth}/logout`
 export const ADMIN_AUTH_FORGOT_PASS = `${AdminAuth}/forgotpassword`
 export const ADMIN_AUTH_RESET_PASS = `${AdminAuth}/resetpassword`
 export const ADMIN_AUTH_CHANGE_PASS = `${AdminAuth}/changepassword`
+export const ADMIN_AUTH_UPDATE_PROFILE = `${AdminAuth}/profile`
 
 // ADMIN OTHER ROUTES
 export const ADMIN_DASHBOARD = `${baseRoute}/admin/dashboard`
+export const ADMIN_DASHBOARD_REVENUE = `${ADMIN_DASHBOARD}/revenue`
+export const ADMIN_DASHBOARD_ORDER = `${ADMIN_DASHBOARD}/order`
 
 // Admin - Inventory Routes
 export const ADMIN_INVENTORY = `${baseRoute}/admin/inventory`

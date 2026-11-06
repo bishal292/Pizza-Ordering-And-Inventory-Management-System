@@ -11,9 +11,24 @@ import { setupSocket } from "./utils/Socket.js";
 
 dotenv.config();
 
-connectDB(); //Connecting to Database-MongoDB.
+connectDB().catch((error) => {
+  console.error("Initial MongoDB connection failed; API requests will retry:", error.message);
+});
 const port = process.env.PORT || 3000;
 const app = express();
+
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000");
+  }
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -43,8 +58,15 @@ app.use("/pizza-image", express.static("uploads"));
 // Middleware to verify Database Connection
 // This middleware will run for every request to the API
 app.use("/api/v1",async (req, res, next) => {
-  await getDBConnection();
-  next();
+  try {
+    await getDBConnection();
+    return next();
+  } catch (error) {
+    console.error("Database unavailable for API request:", error.message);
+    return res.status(503).json({
+      message: "The service is temporarily unavailable. Please retry shortly.",
+    });
+  }
 });
 
 app.get("/api/v1/auth/get-user-info", verifyToken, getUserInfo);

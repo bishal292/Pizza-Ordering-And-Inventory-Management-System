@@ -4,11 +4,17 @@ import zxcvbn from "zxcvbn";
 
 dotenv.config();
 
-const maxAge = 3 * 24 * 60 * 60;
+export const SESSION_MAX_AGE_SECONDS = Number(
+  process.env.MAX_AGE ?? 3 * 24 * 60 * 60
+);
+if (!Number.isSafeInteger(SESSION_MAX_AGE_SECONDS) || SESSION_MAX_AGE_SECONDS < 1) {
+  throw new Error("MAX_AGE must be a positive integer number of seconds.");
+}
+export const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
 
 export const createToken = (email, id) =>
   jwt.sign({ userId: id, email }, process.env.JWT_KEY, {
-    expiresIn: maxAge,
+    expiresIn: SESSION_MAX_AGE_SECONDS,
   });
 
 export const checkPasswordStrength = (password, res) => {

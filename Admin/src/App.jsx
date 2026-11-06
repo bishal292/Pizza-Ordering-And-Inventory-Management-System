@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "./Store/store";
 import {
   createBrowserRouter,
@@ -20,6 +20,7 @@ import UserOdersList from "./pages/AdminPages/UserOrdersList";
 import SelectedUserCart from "./pages/AdminPages/SelectedUserCart";
 import LoadingScreen from "./components/LoadingScreen";
 import SelectedOrder from "./pages/AdminPages/SelectedOrder";
+import AdminProfile from "./pages/AdminPages/AdminProfile";
 
 // Private Routes Component (Protected Routes) -> Only Authenticated Users can access these Routes.
 const PrivateRoutes = ({ children }) => {
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: "dashboard", element: <AdminDashboard /> },
+      { path: "profile", element: <AdminProfile /> },
       { path: "pizzas", element: <AdminPizza /> },
       { path: "inventory", element: <AdminInventory /> },
       { path: "orders", element: <AdminOrders /> },

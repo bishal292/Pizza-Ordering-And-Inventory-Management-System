@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Button } from "./ui/button";
 import { apiClient } from "@/utils/api-client";
 import { USER_AUTH_LOGOUT } from "@/utils/constant";
@@ -14,9 +14,7 @@ const LogoutButton = () => {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      const response = await apiClient.get(USER_AUTH_LOGOUT, {
-        withCredentials: true,
-      });
+      const response = await apiClient.post(USER_AUTH_LOGOUT);
       if (response.status === 200) {
         toast.warning("Logged Out Successfully");
         setUserInfo(null);

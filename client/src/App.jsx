@@ -14,6 +14,7 @@ import { apiClient } from "./utils/api-client";
 import { GET_LOGGED_USER_INFO } from "./utils/constant";
 import UserOrders from "./pages/UserPages/UserOrders";
 import OrderDetails from "./pages/UserPages/OrderDetails";
+import UpdateProfile from "./pages/UserPages/UpdateProfile";
 import LoadingScreen from "./components/LoadingScreen";
 
 // Private Routes Component (Protected Routes) -> Only Authenticated Users can access these Routes.
@@ -78,6 +79,14 @@ const router = createBrowserRouter([
         element: (
           <PrivateRoutes>
             <UserOrders />
+          </PrivateRoutes>
+        ),
+      },
+      {
+        path: "profile",
+        element: (
+          <PrivateRoutes>
+            <UpdateProfile />
           </PrivateRoutes>
         ),
       },

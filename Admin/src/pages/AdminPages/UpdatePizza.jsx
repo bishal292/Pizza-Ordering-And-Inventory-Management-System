@@ -1,24 +1,39 @@
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { ADMIN_UPDATE_PIZZA, ADMIN_UPLOAD_PIZZA_IMAGE } from "@/utils/constant";
-import { Pizza } from "lucide-react";
+import { ADMIN_UPDATE_PIZZA } from "@/utils/constant";
 import { apiClient } from "@/utils/api-client";
-import { handleImageUploadCloudinary, handleImageUploadLocally } from "@/Services/ImageUpload.service";
+import { handleImageUploadCloudinary } from "@/Services/ImageUpload.service";
+
+const getId = (value) => value?._id || value || "";
 
 const UpdatePizza = ({ pizza, inventory, onClose, onUpdate }) => {
   const [updatedPizza, setUpdatedPizza] = useState({
     name: pizza?.name || "",
-    image: Pizza?.image || null,
+    image: null,
     description: pizza?.description || "",
-    size: pizza?.size._id || "",
-    base: pizza?.base || "",
-    sauce: pizza?.sauce || [],
-    cheese: pizza?.cheese || [],
-    toppings: pizza?.toppings || [],
-    price: pizza?.price || "",
+    size: getId(pizza?.size),
+    base: getId(pizza?.base),
+    sauce: (pizza?.sauce || []).map(getId),
+    cheese: (pizza?.cheese || []).map(getId),
+    toppings: (pizza?.toppings || []).map(getId),
+    price: pizza?.price ?? "",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !isSubmitting) onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSubmitting, onClose]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -45,16 +60,17 @@ const UpdatePizza = ({ pizza, inventory, onClose, onUpdate }) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      if (updatedPizza.image) {
-        // updatedPizza.image = await handleImageUploadLocally(updatedPizza.image); // Upload image to server Locally.
-        updatedPizza.image = await handleImageUploadCloudinary(updatedPizza.image); // Upload image to cloudinary.
+      const payload = { ...updatedPizza };
+      if (payload.image) {
+        payload.image = await handleImageUploadCloudinary(payload.image);
+      } else {
+        delete payload.image;
       }
-      const response = await apiClient.patch(`${ADMIN_UPDATE_PIZZA}?id=${pizza._id}`, updatedPizza, {
+      const response = await apiClient.patch(`${ADMIN_UPDATE_PIZZA}?id=${pizza._id}`, payload, {
         withCredentials: true,
       });
       if (response.status === 200) {
         toast.success("Pizza Updated Successfully");
-        console.log("Pizza Updated Successfully",response);
         onUpdate(response.data.pizza);
       }
     } catch (error) {
@@ -65,10 +81,28 @@ const UpdatePizza = ({ pizza, inventory, onClose, onUpdate }) => {
     }
   };
 
-  return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white p-6 rounded shadow-lg w-1/2 max-h-screen overflow-y-auto">
-        <h2 className="text-xl font-semibold mb-4">Update Pizza</h2>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isSubmitting) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-pizza-title"
+        className="my-auto max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-7"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="update-pizza-title" className="text-xl font-semibold mb-4">Update Pizza</h2>
+        {pizza?.image && (
+          <img
+            src={pizza.image}
+            alt={`${pizza.name} current`}
+            className="mb-4 h-40 w-full rounded-xl object-cover"
+          />
+        )}
         <form className="space-y-4" onSubmit={updatePizza}>
           <div>
             <label className="block text-gray-700">Name</label>
@@ -233,7 +267,8 @@ const UpdatePizza = ({ pizza, inventory, onClose, onUpdate }) => {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

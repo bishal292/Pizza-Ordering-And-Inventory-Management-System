@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiClient } from "../../utils/api-client";
 import {
@@ -22,27 +22,33 @@ const AdminOrders = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const fetchOrders = async (reset = false) => {
+  const fetchOrders = useCallback(async (reset = false, requestedSkip = 0) => {
     try {
       setLoading(true);
       const response = await apiClient.get(ADMIN_ALL_ORDERS, {
-        params: { limit, skip },
+        params: { limit, skip: reset ? 0 : requestedSkip },
       });
       if (response.status === 200) {
         setOrders((prevOrders) =>
           reset ? response.data : [...prevOrders, ...response.data]
         );
-        setSkip(skip + limit);
+        setSkip((reset ? 0 : requestedSkip) + limit);
         setHasMore(response.data.length === limit);
       } else if (response.status === 204) {
+        if (reset) setOrders([]);
         setHasMore(false);
       }
     } catch (error) {
       console.error(error.response?.data || error.message);
+      toast.error(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Unable to load orders. Please try again."
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, [limit]);
 
   const fetchOrderAccordingToStatus = async (status) => {
     setLoading(true);
@@ -73,7 +79,7 @@ const AdminOrders = () => {
     }
     setOrders([]);
     setSkip(0);
-  }, [location.search, limit]);
+  }, [location.search, fetchOrders]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -92,6 +98,15 @@ const AdminOrders = () => {
     }
   };
 
+  const allowedNextStatuses = {
+    pending: ["cancelled"],
+    placed: ["preparing", "cancelled"],
+    preparing: ["prepared"],
+    prepared: ["completed"],
+    completed: [],
+    cancelled: [],
+  };
+
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
       setIsSubmitting(true);
@@ -100,13 +115,13 @@ const AdminOrders = () => {
         { status: newStatus },
         { withCredentials: true }
       );
-      if (response.status === 200) {
+      if (response.status === 200 || response.status === 202) {
         setOrders((prevOrders) =>
           prevOrders.map((order) =>
             order._id === orderId ? { ...order, status: newStatus } : order
           )
         );
-        toast.success(response.data?.message || "Order status updated successfully",
+        toast.success(response.data?.message || response.data || "Order status updated successfully",
           {
             duration: 5000,
             style: {
@@ -135,7 +150,7 @@ const AdminOrders = () => {
   };
 
   const handleShowMore = () => {
-    fetchOrders(false);
+    fetchOrders(false, skip);
   };
 
   return (
@@ -221,22 +236,21 @@ const AdminOrders = () => {
                   </Link>
                 </td>
                 <td className="p-3">{order?.tableNo || "N/A"}</td>
-                <td className="p-3">₹ {order?.totalPrice.toFixed(2)}</td>
+                <td className="p-3">₹ {Number(order?.totalPrice || 0).toFixed(2)}</td>
                 <td className="p-3 text-center">{order?.totalQuantity}</td>
                 <td className="p-3">
                   <select
                     value={order.status}
+                    disabled={isSubmitting || !allowedNextStatuses[order.status]?.length}
                     onChange={(e) =>
                       handleUpdateOrderStatus(order._id, e.target.value)
                     }
                     className={`p-2 rounded ${getStatusColor(order.status)}`}
                   >
-                    <option value="pending">Pending</option>
-                    <option value="placed">Placed</option>
-                    <option value="preparing">Preparing</option>
-                    <option value="prepared">Prepared</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
+                    <option value={order.status}>{order.status}</option>
+                    {(allowedNextStatuses[order.status] || []).map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
                   </select>
                 </td>
                 <td className="p-3">

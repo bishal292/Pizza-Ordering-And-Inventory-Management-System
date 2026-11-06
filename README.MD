@@ -125,7 +125,7 @@ and refactoring details.
   * **Veg**: Paneer, Mushroom, Onion, Olive, Jalapeño, Tomato, Capsicum
   * **Non-Veg**: Chicken Tikka, Sausage, Pepperoni, Chicken Keema, BBQ Chicken
 
-Pricing is dynamically calculated based on selected options(Effective on public page only).
+Pricing is recalculated from current server-side pizza and inventory prices at checkout.
 
 ---
 
@@ -135,13 +135,15 @@ Pricing is dynamically calculated based on selected options(Effective on public 
 * Admin can register using thier email along with the admin secret key.
 * Forgot password flow uses OTP verification to reset Password.
 * Sessions are cookie-based with 3-day expiry.
+* Customers and admins can update their password from their profile settings; admins can also update their display name.
 
 ---
 
 ## 📦 Inventory Management
 
-* Stock decreases automatically upon order status update(Decreases on placed and increases on cancellation.)
+* Ingredient stock is reserved atomically when checkout creates a pending order, then released on eligible cancellation.
 * Threshold alerts trigger email to admin when stock is low
+* Admins can search inventory, filter by category and stock level, and sort items by stock, name, category, or price.
 
 ---
 
@@ -149,8 +151,7 @@ Pricing is dynamically calculated based on selected options(Effective on public 
 
 * Total orders, users, pizzas
 * Today's revenue & orders
-* Pie chart for order status Distributions.
-* Line chart for revenue trend over the time period.
+* Live order-status distribution and monthly revenue/order charts based on persisted order data, refreshed automatically.
 * List of most valuable users by most order count.
 
 ---
@@ -172,6 +173,20 @@ npm install
 cp .env.example .env     # Fill in Mongo URI, JWT secret, email credentials and other required details as guided in the .env.example
 npm run dev
 ```
+
+Checkout and cancellation work with standalone MongoDB using conditional
+single-document stock updates and compensating operations. Set `DB_URL` to the
+MongoDB instance you use; do not append `replicaSet=rs0` unless that server is
+actually configured as a replica set. Add Razorpay credentials to the server
+environment and the publishable Razorpay key to each frontend environment;
+never commit real credentials.
+
+Because standalone MongoDB cannot atomically commit changes across the order,
+cart, and inventory collections, the API attempts to reverse earlier updates
+when a later checkout/cancellation step fails. A process crash or database
+failure during compensation can still require manual data reconciliation.
+Replica-set/Atlas transactions are preferable when stronger multi-document
+atomicity is required.
 
 ### Setup Frontend
 #### Client

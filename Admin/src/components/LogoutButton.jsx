@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Button } from "./ui/button";
 import { apiClient } from "@/utils/api-client";
 import { ADMIN_AUTH_LOGOUT } from "@/utils/constant";
@@ -7,22 +7,25 @@ import { toast } from "sonner";
 
 const LogoutButton = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const { userInfo, setUserInfo } = useAppStore();
+  const { setUserInfo } = useAppStore();
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      const response = await apiClient.get(ADMIN_AUTH_LOGOUT,
-        {
-          withCredentials: true,
-        }
-      );
+      const response = await apiClient.get(ADMIN_AUTH_LOGOUT, {
+        withCredentials: true,
+      });
       if (response.status === 200) {
         toast.warning("Logged Out Successfully");
         setUserInfo(null);
       }
     } catch (error) {
       console.error(error);
+      toast.error(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Unable to log out. Please try again."
+      );
     } finally {
       setIsLoggingOut(false);
     }

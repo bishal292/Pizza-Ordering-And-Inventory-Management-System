@@ -4,6 +4,7 @@ import { sendEmail } from "../../Services/EmailService.js";
 import {
   checkPasswordStrength,
   createToken,
+  SESSION_MAX_AGE_MS,
 } from "../../utils/auth-utils.js";
 import validator from "validator";
 import { configDotenv } from "dotenv";
@@ -11,8 +12,6 @@ import crypto from "crypto";
 import BlockedCookies from "../../db/models/BlockedCookies.js";
 
 configDotenv();
-
-const maxAge = 3 * 24 * 60 * 60 * 1000;
 
 export const logIn = async (req, res, next) => {
   try {
@@ -36,7 +35,7 @@ export const logIn = async (req, res, next) => {
       httpOnly: true,
       secure: true,
       sameSite: "None",
-      maxAge,
+      maxAge: SESSION_MAX_AGE_MS,
     });
 
     res.status(200).json({
@@ -82,7 +81,7 @@ export const signUp = async (req, res, next) => {
       httpOnly: true,
       secure: true,
       sameSite: "None",
-      maxAge,
+      maxAge: SESSION_MAX_AGE_MS,
     });
 
     res.status(201).json({
@@ -102,8 +101,8 @@ export const logOut = async (req, res, next) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(400).send("You are not logged in");
+    await BlockedCookies.create({ cookie: req.cookies.pds });
     res.clearCookie("pds");
-    BlockedCookies.create({ cookie: req.cookies.pds });
     res.status(200).send("Logged Out Successfully");
   } catch (error) {
     console.error(error.message);
@@ -134,13 +133,62 @@ export const changePassword = async (req, res, next) => {
 
     // checkPasswordStrength(newPassword); // If password strength is less secure then simply respond with a message to improve password and try again.
     user.password = newPassword;
+    user.resetOTP = undefined;
+    user.resetOTPExpires = undefined;
+    user.resetOTPAttempts = 0;
 
     await user.save();
 
+    res.cookie("pds", createToken(user.email, user._id), {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+      maxAge: SESSION_MAX_AGE_MS,
+    });
     res.status(200).send("Password Changed Successfully");
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const admin = await Admin.findById(req.userId);
+    if (!admin) return res.status(404).send("Admin not found");
+
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).length !== 1 ||
+      typeof req.body.name !== "string"
+    ) {
+      return res.status(400).send("Only a profile name can be updated");
+    }
+
+    const name = req.body.name.trim();
+    if (name.length < 2 || name.length > 100) {
+      return res
+        .status(400)
+        .send("Name must contain between 2 and 100 characters");
+    }
+
+    admin.name = name;
+    await admin.save();
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      user: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: "admin",
+      },
+    });
+  } catch (error) {
+    console.error("Failed to update admin profile:", error.message);
+    return res.status(500).send("Internal Server Error");
   }
 };
 
@@ -183,8 +231,9 @@ export const forgotpassword = async (req, res, next) => {
         .send("Reset Password OTP Sent to your email, please check your email");
     } catch (error) {
       console.error(error.message);
-      user.passwordResetToken = undefined;
-      user.passwordResetExpires = undefined;
+      user.resetOTP = undefined;
+      user.resetOTPExpires = undefined;
+      user.resetOTPAttempts = 0;
       await user.save();
       return res
         .status(500)
@@ -204,6 +253,9 @@ export const resetpassword = async (req, res, next) => {
       return res
         .status(400)
         .send("Please provide email, OTP, password and confirm password");
+    if (typeof otp !== "string" || !/^\d{6}$/.test(otp)) {
+      return res.status(400).send("Invalid OTP, Please try again");
+    }
 
     if (!validator.isEmail(email))
       return res
@@ -218,8 +270,31 @@ export const resetpassword = async (req, res, next) => {
     if (!user.resetOTP || Date.now() > user.resetOTPExpires)
       return res.status(400).send("Invalid or Expired OTP, Please try again");
     const hashedOTP = crypto.createHash("sha256").update(otp).digest("hex");
-    if (hashedOTP !== user.resetOTP)
+    if (
+      user.resetOTPAttempts >= 5 ||
+      !crypto.timingSafeEqual(Buffer.from(hashedOTP, "hex"), Buffer.from(user.resetOTP, "hex"))
+    ) {
+      const attempt = await Admin.findOneAndUpdate(
+        {
+          _id: user._id,
+          resetOTP: user.resetOTP,
+          resetOTPExpires: { $gt: new Date() },
+          $or: [
+            { resetOTPAttempts: { $lt: 5 } },
+            { resetOTPAttempts: { $exists: false } },
+          ],
+        },
+        { $inc: { resetOTPAttempts: 1 } },
+        { new: true }
+      ).select("resetOTPAttempts");
+      if (attempt?.resetOTPAttempts >= 5) {
+        await Admin.updateOne(
+          { _id: user._id, resetOTP: user.resetOTP, resetOTPAttempts: { $gte: 5 } },
+          { $unset: { resetOTP: 1, resetOTPExpires: 1 } }
+        );
+      }
       return res.status(400).send("Invalid OTP, Please try again");
+    }
 
     if (password !== confirmPassword)
       return res
@@ -232,9 +307,29 @@ export const resetpassword = async (req, res, next) => {
         .send("New Password cannot be same as old password");
     // checkPasswordStrength(password); // If password strength is less secure then simply respond with a message to improve password and try again.
 
+    const consumedOTP = await Admin.updateOne(
+      {
+        _id: user._id,
+        resetOTP: user.resetOTP,
+        resetOTPExpires: { $gt: new Date() },
+        $or: [
+          { resetOTPAttempts: { $lt: 5 } },
+          { resetOTPAttempts: { $exists: false } },
+        ],
+      },
+      {
+        $unset: { resetOTP: 1, resetOTPExpires: 1 },
+        $set: { resetOTPAttempts: 0 },
+      }
+    );
+    if (consumedOTP.modifiedCount !== 1) {
+      return res.status(400).send("Invalid or Expired OTP, Please try again");
+    }
+
     user.password = password;
     user.resetOTP = undefined;
     user.resetOTPExpires = undefined;
+    user.resetOTPAttempts = 0;
     await user.save();
 
     // res.status(200).send("Password Reset Successfully! Please login with your new password");
@@ -280,5 +375,4 @@ export const AdminInfo = async (req, res, next) => {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
   }
-  next();
 };

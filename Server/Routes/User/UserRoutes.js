@@ -13,7 +13,10 @@ import {
   cancelOrder,
   completePayment,
 } from "../../Controllers/User/UserMiscControllers.js";
-import { verifyToken } from "../../Middlewares/AuthMiddleware.js";
+import {
+  verifyToken,
+  verifyTrustedRequestOrigin,
+} from "../../Middlewares/AuthMiddleware.js";
 import { verifyPayment } from "../../Services/RazorPay.js";
 
 
@@ -22,15 +25,25 @@ const UserRouter = Router();
 UserRouter.use('/auth', userAuthRouter);
 
 UserRouter.get('/pizzas', getPizzas);
-UserRouter.post('/cart',verifyToken, addToCart);
+UserRouter.post('/cart',verifyTrustedRequestOrigin, verifyToken, addToCart);
 UserRouter.get('/cart',verifyToken, getCart);
-UserRouter.delete('/cart',verifyToken, removeFromCart);
+UserRouter.delete('/cart',verifyTrustedRequestOrigin, verifyToken, removeFromCart);
 UserRouter.get('/options', getOptions);// Get all the options for customizing the pizza
-UserRouter.delete('/cart/clear',verifyToken, clearCart);
-UserRouter.post('/place-order',verifyToken, placeOrder);
+UserRouter.delete('/cart/clear',verifyTrustedRequestOrigin, verifyToken, clearCart);
+UserRouter.post('/place-order',verifyTrustedRequestOrigin, verifyToken, placeOrder);
 UserRouter.get('/orders',verifyToken, getOrders);
 UserRouter.get('/order/details',verifyToken, getOrderDetails);
-UserRouter.post("/order/verify-payment",verifyToken, verifyPayment);
-UserRouter.get("/order/complete-payment",verifyToken, completePayment);
-UserRouter.get("/order/cancel",verifyToken, cancelOrder);
+UserRouter.post("/order/verify-payment",verifyTrustedRequestOrigin, verifyToken, verifyPayment);
+UserRouter.post(
+  "/order/complete-payment",
+  verifyTrustedRequestOrigin,
+  verifyToken,
+  completePayment
+);
+UserRouter.post(
+  "/order/cancel",
+  verifyTrustedRequestOrigin,
+  verifyToken,
+  cancelOrder
+);
 export default UserRouter;

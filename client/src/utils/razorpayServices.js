@@ -5,10 +5,10 @@ import { apiClient } from "./api-client";
 export const handleCompletePayment = async (userInfo, orderId, setIsSubmitting) => {
   try {
     setIsSubmitting(true);
-    const response = await apiClient.get(`${USER_PAYMENT_ROUTE}?id=${orderId}`, {}, { withCredentials: true });
+    const response = await apiClient.post(`${USER_PAYMENT_ROUTE}?id=${orderId}`);
     if (response.status === 200) {
-      toast.success("Payment Initiated..");
       await openRazorPayScreenUI(userInfo, response.data.order);
+      toast("Complete payment to confirm your order.");
     }
   } catch (error) {
     console.error("Error completing payment:", error);
@@ -55,38 +55,35 @@ export async function paymentVerification(response) {
  * @returns {void} -> Opens Razorpay payment screen
  */
 export async function openRazorPayScreenUI(userInfo,order) {
-  try {
-    const razorpayKey = import.meta.env.VITE_RAZORPAY_API_KEY;
-    if (!razorpayKey) {
-      toast.error("Razorpay API key is missing. Please contact support.");
-      return;
-    }
-
-    const options = {
-      key: razorpayKey,
-      amount: order?.amount || 0,
-      currency: order?.currency || "INR",
-      name: "Pizzeria",
-      description: order?.notes?.description || "",
-      order_id: order.id,
-      handler: paymentVerification,
-      prefill: {
-        name: userInfo.name,
-        email: userInfo.email,
-        contact: "9999999999",
-      },
-      theme: {
-        color: "#F37254",
-      },
-    };
-
-    if (typeof window.Razorpay !== "undefined") {
-      const razorpayInstance = new window.Razorpay(options);
-      razorpayInstance.open();
-    } else {
-      console.error("Razorpay SDK not loaded properly.");
-    }
-  } catch (error) {
-    console.error("Error Occurred during opening razorpay screen",error)
+  const razorpayKey = import.meta.env.VITE_RAZORPAY_API_KEY;
+  if (!razorpayKey) {
+    throw new Error("Razorpay is not configured. Please contact support.");
   }
+  if (!order?.id) {
+    throw new Error("The payment service did not return a valid order.");
+  }
+  if (typeof window.Razorpay !== "function") {
+    throw new Error("The payment window could not be loaded. Please try again.");
+  }
+
+  const options = {
+    key: razorpayKey,
+    amount: order.amount,
+    currency: order.currency || "INR",
+    name: "Pizzeria",
+    description: order.notes?.description || "",
+    order_id: order.id,
+    handler: paymentVerification,
+    prefill: {
+      name: userInfo?.name || "",
+      email: userInfo?.email || "",
+      contact: "9999999999",
+    },
+    theme: {
+      color: "#F37254",
+    },
+  };
+
+  const razorpayInstance = new window.Razorpay(options);
+  razorpayInstance.open();
 }

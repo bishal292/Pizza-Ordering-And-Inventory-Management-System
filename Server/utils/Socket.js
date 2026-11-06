@@ -1,7 +1,10 @@
 import { Server as SocketIOServer } from "socket.io";
 import { Cart } from "../db/models/CartModel.js";
 import { Admin } from "../db/models/AdminModel.js";
+import { User } from "../db/models/UserModel.js";
+import BlockedCookies from "../db/models/BlockedCookies.js";
 import mongoose from "mongoose"; // Import mongoose to validate ObjectId
+import jwt from "jsonwebtoken";
 
 let io; // Declare the io instance
 export const adminSocketMap = new Map();
@@ -29,6 +32,53 @@ const setupSocket = (server) => {
     },
   });
 
+  io.use(async (socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie || "";
+      const token = cookieHeader
+        .split(";")
+        .map((cookie) => cookie.trim())
+        .find((cookie) => cookie.startsWith("pds="))
+        ?.slice(4);
+      if (!token) return next(new Error("Authentication required"));
+
+      const decoded = jwt.verify(decodeURIComponent(token), process.env.JWT_KEY);
+      if (
+        !decoded.userId ||
+        !decoded.iat ||
+        !mongoose.isValidObjectId(decoded.userId)
+      ) {
+        return next(new Error("Authentication required"));
+      }
+      if (await BlockedCookies.exists({ cookie: decodeURIComponent(token) })) {
+        return next(new Error("Authentication required"));
+      }
+
+      const user = await User.findById(decoded.userId).select(
+        "_id passwordChangedAt"
+      );
+      const admin = user
+        ? null
+        : await Admin.findById(decoded.userId).select("_id passwordChangedAt");
+      if (!admin && !user) return next(new Error("Authentication required"));
+
+      const account = user || admin;
+      if (
+        account.passwordChangedAt &&
+        decoded.iat * 1000 < account.passwordChangedAt.getTime()
+      ) {
+        return next(new Error("Authentication required"));
+      }
+
+      socket.data.userId = decoded.userId;
+      socket.data.role = user ? "user" : "admin";
+      next();
+    } catch (error) {
+      console.error("Socket authentication failed:", error.message);
+      next(new Error("Authentication required"));
+    }
+  });
+
   const disconnectUser = (socket) => {
     const userId = [...userSocketMap.entries()].find(
       ([key, value]) => value === socket.id
@@ -48,26 +98,13 @@ const setupSocket = (server) => {
   };
 
   io.on("connection", async (socket) => {
-    const userId = socket.handshake.query.userId;
-
-    // Validate userId
-    if (!userId || !mongoose.isValidObjectId(userId)) {
-      console.log("Invalid or missing userId during connection.");
-      return socket.disconnect(true); // Disconnect the socket if userId is invalid
-    }
-
-    try {
-      const admin = await Admin.findById(userId);
-      if (admin) {
-        adminSocketMap.set(userId, socket.id);
-        console.log(`Admin connected: ${userId} with socket ID: ${socket.id}`);
-      } else {
-        userSocketMap.set(userId, socket.id);
-        console.log(`User connected: ${userId} with socket ID: ${socket.id}`);
-      }
-    } catch (error) {
-      console.error("Error during user/admin identification:", error.message);
-      return socket.disconnect(true); // Disconnect the socket on error
+    const userId = socket.data.userId;
+    if (socket.data.role === "admin") {
+      adminSocketMap.set(userId, socket.id);
+      console.log(`Admin connected: ${userId} with socket ID: ${socket.id}`);
+    } else {
+      userSocketMap.set(userId, socket.id);
+      console.log(`User connected: ${userId} with socket ID: ${socket.id}`);
     }
 
     socket.on("disconnect", () => {

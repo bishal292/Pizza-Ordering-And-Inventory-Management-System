@@ -17,7 +17,6 @@ export const SocketProvider = ({ children }) => {
     }
     socket.current = io(HOST, {
       withCredentials: true,
-      query: { userId: userInfo?._id },
     });
 
     socket.current.on("connect", () => {

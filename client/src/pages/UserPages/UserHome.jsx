@@ -1,17 +1,17 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiClient } from "@/utils/api-client";
-import { HOST, USER_ADD_TO_CART, USER_GET_PIZZAS } from "@/utils/constant";
+import { USER_ADD_TO_CART, USER_GET_PIZZAS } from "@/utils/constant";
 import { toast } from "sonner";
 import useCartStore from "@/Store/cartStore";
 import ImageSlider from "@/components/ImageSlider";
 import CustomizePizzaModal from "@/components/CustomizePizzaModal"; // Import the CustomizePizzaModal component
 import { FaCartPlus } from "react-icons/fa6";
-import { Pizza } from "lucide-react";
 import LoadingScreen from "@/components/LoadingScreen";
 
 const UserHome = () => {
   const [pizzas, setPizzas] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [selectedPizza, setSelectedPizza] = useState(null);
   const addToCart = useCartStore((state) => state.addToCart);
 
@@ -26,30 +26,25 @@ const UserHome = () => {
           setPizzas(response.data);
         }
       } catch (error) {
-        toast.error("Error fetching pizzas");
+        setLoadError(true);
+        toast.error(
+          error.response?.data?.message ||
+            error.response?.data ||
+            "The menu could not be loaded. Please try again."
+        );
       } finally {
         setIsLoaded(true);
       }
     };
 
-    const fetchSliderImages = async () => {
-      try {
-        const response = await apiClient.get("/slider-images");
-        console.log(response);
-      } catch (error) {
-        toast.error("Error fetching slider images");
-      }
-    };
-
-    // fetchSliderImages();
-
     fetchPizzas();
   }, []);
 
-  const handleAddToCart = (pizza) => {
-    addToCart(pizza);
-    addToServerCart(pizza);
-    toast.success("Pizza added to cart");
+  const handleAddToCart = async (pizza) => {
+    if (await addToServerCart(pizza)) {
+      addToCart(pizza);
+      toast.success(`${pizza.name} added to cart`);
+    }
   };
 
   const handleCustomizePizza = (pizza) => {
@@ -69,22 +64,27 @@ const UserHome = () => {
         { withCredentials: true }
       );
       if (response.status === 201) {
-        toast.success(response.data);
+        return true;
       }
+      return false;
     } catch (error) {
-      toast.error(error.response?.data || error.response?.message);
+      toast.error(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Unable to add this pizza. Please try again."
+      );
+      return false;
     }
   };
-  const handleSaveCustomizedPizza = (customizedPizza) => {
-    // Pass customizations to addToCart
-    selectedPizza.price = customizedPizza.price;
+  const handleSaveCustomizedPizza = async (customizedPizza) => {
     const customizations =
       customizedPizza.customizations === null
         ? {}
         : customizedPizza.customizations;
+    const saved = await addToServerCart(selectedPizza, customizations);
+    if (!saved) return;
     addToCart(selectedPizza, customizations);
-    addToServerCart(selectedPizza, customizations);
-    toast.success("pizza added to cart");
+    toast.success(`${selectedPizza.name} added to cart`);
     setSelectedPizza(null);
   };
 
@@ -93,9 +93,8 @@ const UserHome = () => {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen font-sans">
-      {/* Hero Section */}
-      <div className="relative">
+    <main className="min-h-screen bg-[#faf7f2] font-sans">
+      <section className="relative isolate overflow-hidden bg-[#241812]">
         <ImageSlider
           images={[
             "https://i0.wp.com/picjumbo.com/wp-content/uploads/detail-of-salami-pizza-free-photo.jpg?w=2210&quality=70",
@@ -103,100 +102,112 @@ const UserHome = () => {
             "https://media.istockphoto.com/id/1280329631/photo/italian-pizza-margherita-with-tomatoes-and-mozzarella-cheese-on-wooden-cutting-board-close-up.jpg?s=612x612&w=0&k=20&c=CFDDjavIC5l8Zska16UZRZDXDwd47fwmRsUNzY0Ym6o=",
           ]}
         />
-        <div className="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-black/60 to-black/30 text-white text-center px-6">
-          <h1 className="text-6xl font-extrabold mb-4 animate-fade-in">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-r from-[#1b120d]/85 via-[#1b120d]/55 to-[#1b120d]/25 px-5 text-center text-white sm:px-8">
+          <p className="text-xs font-bold uppercase tracking-[0.3em] text-orange-300 sm:text-sm">
+            Fresh from our oven
+          </p>
+          <h1 className="mt-4 max-w-3xl text-4xl font-extrabold leading-tight sm:text-6xl">
             Welcome to Pizzeria 🍕
           </h1>
-          <p className="text-xl mb-6 opacity-90">
+          <p className="mb-7 mt-4 max-w-xl text-base text-stone-100 sm:text-xl">
             Your favorite pizzas, made fresh daily!
           </p>
-          <a href="#orderNow">
-            <button className="bg-red-600 hover:bg-red-700 transition-all text-white px-8 py-3 text-xl font-bold rounded-full shadow-lg transform hover:scale-105">
-              Order Now 🚀
-            </button>
+          <a
+            href="#orderNow"
+            className="rounded-full bg-orange-600 px-7 py-3 text-base font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-orange-700 sm:text-lg"
+          >
+            Explore the menu
           </a>
         </div>
-      </div>
+      </section>
 
-      {/* Available Pizzas Section */}
-      <div className="p-6 sm:p-10 max-w-7xl mx-auto">
-        <h1
+      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-7 sm:py-14">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-700">Made for sharing</p>
+          <h2
           id="orderNow"
-          className="text-4xl font-extrabold text-gray-900 mb-8 text-center"
+            className="mt-2 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl"
         >
-          🍕 Our Delicious Pizzas 🍕
-        </h1>
+            Find your new favorite
+          </h2>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-stone-600 sm:text-base">
+            Choose a classic or make it your own with fresh ingredients and
+            custom toppings.
+          </p>
+        </div>
 
-        {/* Pizza Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {loadError ? (
+          <div className="rounded-xl border border-stone-200 bg-white px-6 py-12 text-center">
+            <p className="font-semibold text-stone-800">We could not reach the menu.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white hover:bg-orange-700"
+            >
+              Try again
+            </button>
+          </div>
+        ) : pizzas.length === 0 ? (
+          <div className="rounded-xl border border-stone-200 bg-white px-6 py-12 text-center text-stone-600">
+            No pizzas are available right now. Please check back soon.
+          </div>
+        ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {pizzas.map((pizza) => (
             <div
               key={pizza._id}
-              className="group bg-white/90 border border-gray-200 rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-2xl"
+              className="group flex h-full flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
             >
-              <div className="relative">
-                {/* Pizza Image */}
+              <div className="relative overflow-hidden bg-stone-100">
                 <img
                   src={`${pizza.image}`}
                   alt={pizza.name}
-                  className="w-full h-36 object-cover rounded-t-xl transition-all duration-300"
+                  className="h-52 w-full object-cover transition duration-500 group-hover:scale-105"
+                  onError={(event) => {
+                    event.currentTarget.style.visibility = "hidden";
+                  }}
                 />
-
-                {/* Description Overlay on Hover */}
-                <div className="absolute inset-0 bg-black bg-opacity-70 text-white flex flex-col justify-center items-center opacity-0 transition-opacity duration-300 group-hover:opacity-100 p-4 text-center">
-                  <p className="text-sm">{pizza.description}</p>
-                </div>
+                <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-stone-700 shadow-sm">
+                  {pizza.size?.name || "House size"}
+                </span>
               </div>
 
-              {/* Pizza Details */}
-              <div className="p-4">
-                {/* Pizza Name (Always Visible) */}
-                <h2 className="text-xl font-bold text-gray-800">
-                  {pizza.name}
-                </h2>
-
-                <div className="mt-2 text-gray-700 text-sm space-y-1">
-                  <p>
-                    <b>Size:</b> {pizza.size?.name}
-                  </p>
-                  <p>
-                    <b>Base:</b> {pizza.base.name}
-                  </p>
-                  <p>
-                    <b>Sauce:</b> {pizza.sauce.map((s) => s.name).join(", ")}
-                  </p>
-                  <p>
-                    <b>Cheese:</b> {pizza.cheese.map((c) => c.name).join(", ")}
-                  </p>
-                  <p>
-                    <b>Toppings:</b>{" "}
-                    {pizza.toppings.map((t) => t.name).join(", ")}
-                  </p>
-                  <p className="text-lg font-bold mt-3">₹ {pizza.price}</p>
+              <div className="flex flex-1 flex-col p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-lg font-bold text-stone-900">{pizza.name}</h3>
+                  <span className="shrink-0 text-lg font-extrabold text-orange-700">
+                    ₹{Number(pizza.price).toFixed(0)}
+                  </span>
                 </div>
-
-                {/* Buttons */}
-                <div className="mt-4 flex justify-between gap-2">
+                <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-stone-600">
+                  {pizza.description}
+                </p>
+                <p className="mt-3 truncate text-xs text-stone-500">
+                  {[pizza.base?.name, ...(pizza.toppings || []).map((item) => item.name)]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                <div className="mt-auto grid grid-cols-2 gap-2 pt-5">
                   <button
-                    className="bg-green-500 hover:bg-green-600 hover:scale-95 text-white text-center px-3 py-2 rounded-lg shadow-md transition-all flex-1 flex items-center justify-around"
+                    className="flex items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700"
                     onClick={() => handleAddToCart(pizza)}
                   >
                     <FaCartPlus /> Add
                   </button>
                   <button
-                    className="bg-blue-500 hover:bg-blue-600 hover:scale-95 text-white px-3 py-2 rounded-lg shadow-md transition-all flex-1"
+                    className="rounded-lg border border-orange-200 px-3 py-2.5 text-sm font-semibold text-orange-800 transition hover:bg-orange-50"
                     onClick={() => handleCustomizePizza(pizza)}
                   >
-                    🎨 Customize
+                    Customize
                   </button>
                 </div>
               </div>
             </div>
           ))}
         </div>
-      </div>
+        )}
+      </section>
 
-      {/* Customize Pizza Modal */}
       {selectedPizza && (
         <CustomizePizzaModal
           pizza={selectedPizza}
@@ -204,7 +215,7 @@ const UserHome = () => {
           onClose={() => setSelectedPizza(null)}
         />
       )}
-    </div>
+    </main>
   );
 };
 

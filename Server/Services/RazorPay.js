@@ -2,14 +2,12 @@ import Razorpay from "razorpay";
 import crypto from "crypto";
 import { User } from "../db/models/UserModel.js";
 import { Order } from "../db/models/Orders.js";
+import { updateOrderPaymentStatus } from "./OrderWorkflowService.js";
 
 // Razor-Pay instances
 export const instance = new Razorpay({
   key_id: process.env.RAZORPAY_API_KEY,
   key_secret: process.env.RAZORPAY_API_SECRET,
-  headers: {
-    "X-Razorpay-Account": "<merchant_account_id>",
-  },
 });
 
 /**
@@ -18,13 +16,20 @@ export const instance = new Razorpay({
  * @param {Response} res -> Response with status and message
  * @param {NextFunction} next
  */
-export const verifyPayment = async (req, res, next) => {
+export const verifyPayment = async (req, res) => {
   try {
     const userId = req.userId;
-    const user = User.findById(userId);
+    const user = await User.findById(userId);
     if (!user) return res.status(404).send("Your user account not found");
     const { orderId, paymentId, signature } = req.body;
-    if (!orderId || !paymentId || !signature) {
+    if (
+      typeof orderId !== "string" ||
+      typeof paymentId !== "string" ||
+      typeof signature !== "string" ||
+      !orderId ||
+      !paymentId ||
+      !signature
+    ) {
       return res.status(400).json({
         message: "Invalid Request",
         reason: "Missing orderId, paymentId or signature",
@@ -35,15 +40,49 @@ export const verifyPayment = async (req, res, next) => {
       .createHmac("sha256", process.env.RAZORPAY_API_SECRET)
       .update(body.toString())
       .digest("hex");
-    if (expectedSignature === signature) {
-      const updatedOrder = await Order.findOneAndUpdate(
-        { orderId },
-        { status: "placed", paymentId },
-        { new: true }
+    const expectedBuffer = Buffer.from(expectedSignature, "hex");
+    const signatureBuffer = Buffer.from(signature, "hex");
+    if (
+      signatureBuffer.length === expectedBuffer.length &&
+      crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+    ) {
+      const order = await Order.findOne({ orderId, userId });
+      if (!order) return res.status(404).send("Order not found");
+      if (
+        order.status === "placed" &&
+        order.paymentId === paymentId &&
+        order.paymentStatus === "paid"
+      ) {
+        return res.status(200).json({
+          message: "Payment was already verified",
+          order,
+        });
+      }
+      if (order.status !== "pending") {
+        return res.status(409).send("Order is not awaiting payment");
+      }
+      const payment = await instance.payments.fetch(paymentId);
+      if (
+        payment.order_id !== orderId ||
+        payment.status !== "captured" ||
+        payment.amount !== Math.round(order.totalPrice * 100) ||
+        payment.currency !== "INR"
+      ) {
+        return res.status(400).json({ message: "Payment details do not match this order" });
+      }
+
+      const updatedOrder = await updateOrderPaymentStatus(
+        order._id,
+        paymentId,
+        userId,
+        orderId
       );
+      if (!updatedOrder) {
+        return res.status(409).send("Order payment has already been processed");
+      }
       res.status(200).json({
         message: "Payment Successful",
-        order: updatedOrder ? updatedOrder : null,
+        order: updatedOrder,
       });
     } else {
       res.status(400).json({ message: "Invalid Payment" });
@@ -63,8 +102,11 @@ export const verifyPayment = async (req, res, next) => {
  */
 export const createPayment = async (amount,dailyOrderId, currency = "INR") => {
   try {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { success: false, message: "Payment amount must be greater than zero." };
+    }
     const razorpayOrder = await instance.orders.create({
-      amount: amount * 100, // Amount in paise (₹1 = 100 paise)
+      amount: Math.round(amount * 100), // Amount in paise (₹1 = 100 paise)
       currency: currency,
       receipt: dailyOrderId.toString(),
       payment_capture: 1, // Auto-capture payment
@@ -88,7 +130,7 @@ export const createPayment = async (amount,dailyOrderId, currency = "INR") => {
  * @param {string} razorpayOrderId
  * @returns
  */
-export const refundOrder = async (razorpayOrderId) => {
+export const refundOrder = async (razorpayOrderId, paymentId) => {
   try {
     const order = await instance.orders.fetch(razorpayOrderId);
 
@@ -105,14 +147,20 @@ export const refundOrder = async (razorpayOrderId) => {
       return { success: false, message: "No payments found." };
     }
 
-    const paymentId = payments.items[0].id;
+    const payment = payments.items.find(
+      (item) => item.id === paymentId && item.status === "captured"
+    ) || (!paymentId ? payments.items.find((item) => item.status === "captured") : null);
+    if (!payment) {
+      return { success: false, message: "No captured payment found." };
+    }
 
     // Create the refund
-    const refund = await instance.payments.refund(paymentId, {
-      amount: order.amount,
+    const refund = await instance.payments.refund(payment.id, {
+      amount: payment.amount,
       speed: "normal",
       notes: {
         reason: "Order cancelled",
+        order_id: razorpayOrderId,
       },
     });
 
@@ -158,16 +206,33 @@ export async function checkPayment(razorpayOrderId) {
 
     const payments = await instance.orders.fetchPayments(razorpayOrderId);
 
-    const isPaid = payments.items.some((payment) => payment.status !== "paid");
+    const capturedPayment = payments.items.find(
+      (payment) => payment.status === "captured"
+    );
     return{
       success:true,
-      isPaid:isPaid,
+      isPaid:Boolean(capturedPayment),
+      payment: capturedPayment,
       payments
     }
   } catch (error) {
     console.error("Error checking Razorpay order status:", error);
     return { success: false, message: "Failed to fetch order status.", error };
   }
+}
+
+export async function findCapturedPayment(razorpayOrderId, expectedAmount) {
+  const result = await checkPayment(razorpayOrderId);
+  if (!result.success) return result;
+
+  const payment = result.payments.items.find(
+    (item) =>
+      item.status === "captured" &&
+      item.order_id === razorpayOrderId &&
+      item.amount === Math.round(expectedAmount * 100) &&
+      item.currency === "INR"
+  );
+  return { success: true, isPaid: Boolean(payment), payment };
 }
 
 /**

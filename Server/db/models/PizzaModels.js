@@ -9,7 +9,7 @@ const pizzaSchema = new mongoose.Schema({
   sauce: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Inventory'}],
   cheese: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Inventory' }],
   toppings: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Inventory' }],
-  price: { type: Number, required: true },
+  price: { type: Number, required: true, min: 0.01 },
   status: { type: String, enum: ['available', 'unavailable'], default: 'available' }
 }, { timestamps: true });
 

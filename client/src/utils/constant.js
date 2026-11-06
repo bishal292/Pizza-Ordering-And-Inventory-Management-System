@@ -8,6 +8,7 @@ const UserAuth = `${baseRoute}/user/auth`
 export const USER_AUTH_LOGIN = `${UserAuth}/login`
 export const USER_AUTH_SIGNUP = `${UserAuth}/signup`
 export const USER_AUTH_LOGOUT = `${UserAuth}/logout`
+export const USER_UPDATE_PROFILE = `${UserAuth}/profile`
 export const USER_AUTH_FORGOT_PASS = `${UserAuth}/forgotpassword`
 export const USER_AUTH_RESET_PASS = `${UserAuth}/resetpassword`
 export const USER_AUTH_CHANGE_PASS = `${UserAuth}/changepassword`

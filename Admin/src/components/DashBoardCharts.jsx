@@ -1,15 +1,21 @@
-import React, { useEffect, useState } from "react";
-import { Line, Doughnut } from "react-chartjs-2";
+import { useEffect, useState } from "react";
+import { apiClient } from "@/utils/api-client";
 import {
-  Chart as ChartJS,
+  ADMIN_DASHBOARD_ORDER,
+  ADMIN_DASHBOARD_REVENUE,
+} from "@/utils/constant";
+import { Line, Doughnut } from "react-chartjs-2";
+import { toast } from "sonner";
+import {
+  ArcElement,
   CategoryScale,
+  Chart as ChartJS,
+  Legend,
   LinearScale,
-  PointElement,
   LineElement,
+  PointElement,
   Title,
   Tooltip,
-  Legend,
-  ArcElement,
 } from "chart.js";
 
 ChartJS.register(
@@ -20,161 +26,204 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  ArcElement,
+  ArcElement
 );
+
+const initialOrderData = {
+  pending: 0,
+  placed: 0,
+  preparing: 0,
+  prepared: 0,
+  completed: 0,
+  cancelled: 0,
+};
+
+const orderStatuses = [
+  ["pending", "Pending", "#f59e0b"],
+  ["placed", "Placed", "#3b82f6"],
+  ["preparing", "Preparing", "#f97316"],
+  ["prepared", "Prepared", "#8b5cf6"],
+  ["completed", "Completed", "#10b981"],
+  ["cancelled", "Cancelled", "#ef4444"],
+];
 
 const DashBoardCharts = () => {
   const [revenueData, setRevenueData] = useState([]);
-  const [orderData, setOrderData] = useState([]);
+  const [orderData, setOrderData] = useState(initialOrderData);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
-    // Simulating fetching data
-    const fetchRevenueData = async () => {
-      const demoRevenue = [
-        { month: "Jan", revenue: 12000, orders: 120 },
-        { month: "Feb", revenue: 13500, orders: 140 },
-        { month: "Mar", revenue: 11000, orders: 115 },
-        { month: "Apr", revenue: 16000, orders: 155 },
-        { month: "May", revenue: 17500, orders: 170 },
-        { month: "Jun", revenue: 19000, orders: 180 },
-        { month: "Jul", revenue: 20000, orders: 200 },
-        { month: "Aug", revenue: 21000, orders: 215 },
-        { month: "Sep", revenue: 22000, orders: 225 },
-        { month: "Oct", revenue: 23000, orders: 230 },
-        { month: "Nov", revenue: 24000, orders: 245 },
-        { month: "Dec", revenue: 25000, orders: 260 },
-      ];
-      setRevenueData(demoRevenue);
+    let active = true;
+    const fetchDashboardCharts = async () => {
+      try {
+        const [revenueResponse, orderResponse] = await Promise.all([
+          apiClient.get(ADMIN_DASHBOARD_REVENUE, { withCredentials: true }),
+          apiClient.get(ADMIN_DASHBOARD_ORDER, { withCredentials: true }),
+        ]);
+        if (!active) return;
+        setRevenueData(revenueResponse.data);
+        setOrderData(orderResponse.data);
+        setLastUpdated(new Date());
+      } catch (error) {
+        if (!active) return;
+        console.error("Error fetching dashboard charts:", error);
+        toast.error(
+          error.response?.data?.message ||
+            error.response?.data ||
+            "Unable to load dashboard charts."
+        );
+      } finally {
+        if (active) setIsLoading(false);
+      }
     };
 
-    const fetchOrderData = async () => {
-      const demoOrderStatus = {
-        placed: 400,
-        delivered: 320,
-        cancelled: 50,
-        pending: 30,
-      };
-      setOrderData(demoOrderStatus);
+    fetchDashboardCharts();
+    const timer = window.setInterval(fetchDashboardCharts, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
     };
-
-    fetchRevenueData();
-    fetchOrderData();
   }, []);
 
-  // Line Chart Data
   const lineChartData = {
     labels: revenueData.map((item) => item.month),
     datasets: [
       {
-        label: "Monthly Revenue ($)",
+        label: "Revenue (₹)",
         data: revenueData.map((item) => item.revenue),
-        borderColor: "rgba(75, 192, 192, 1)",
-        backgroundColor: "rgba(75, 192, 192, 0.2)",
-        tension: 0.4,
+        yAxisID: "revenue",
+        borderColor: "#ea580c",
+        backgroundColor: "rgba(234, 88, 12, 0.12)",
+        pointBackgroundColor: "#ea580c",
+        tension: 0.35,
         fill: true,
       },
       {
-        label: "Monthly Orders",
+        label: "Orders",
         data: revenueData.map((item) => item.orders),
-        borderColor: "rgba(255, 99, 132, 1)",
-        backgroundColor: "rgba(255, 99, 132, 0.2)",
-        tension: 0.4,
-        fill: true,
+        yAxisID: "orders",
+        borderColor: "#2563eb",
+        backgroundColor: "rgba(37, 99, 235, 0.08)",
+        pointBackgroundColor: "#2563eb",
+        tension: 0.35,
       },
     ],
   };
 
-  // Doughnut Chart Data
-  const totalOrders = Object.values(orderData).reduce((a, b) => a + b, 0);
-  const doughnutChartData = {
-    labels: ["Placed", "Completed", "Cancelled", "Pending"],
-    datasets: [
-      {
-        label: "Order Distribution",
-        data: [
-          orderData.placed,
-          orderData.delivered,
-          orderData.cancelled,
-          orderData.pending,
-        ],
-        backgroundColor: [
-          "rgba(54, 162, 235, 0.8)", // Placed
-          "rgba(75, 192, 192, 0.8)", // Completed
-          "rgba(255, 99, 132, 0.8)", // Cancelled
-          "rgba(255, 206, 86, 0.8)", // Pending
-        ],
-        borderColor: [
-          "rgba(54, 162, 235, 1)",
-          "rgba(75, 192, 192, 1)",
-          "rgba(255, 99, 132, 1)",
-          "rgba(255, 206, 86, 1)",
-        ],
-        borderWidth: 2,
-        borderRadius: 10, // Rounded corners
-        hoverOffset: 10, // Add space when hovered
-      },
-    ],
-  };
-
-  // Options for Doughnut Chart
-  const doughnutOptions = {
+  const lineOptions = {
     responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
     plugins: {
-      legend: {
-        position: "top",
-        labels: {
-          color: "#333",
-          font: {
-            size: 14,
-          },
-        },
-      },
+      legend: { position: "bottom" },
       tooltip: {
         callbacks: {
-          label: (tooltipItem) => {
-            const value = tooltipItem.raw;
-            const percentage = ((value / totalOrders) * 100).toFixed(2);
-            return `${tooltipItem.label}: ${value} (${percentage}%)`;
-          },
+          label: (context) =>
+            context.dataset.yAxisID === "revenue"
+              ? ` Revenue: ₹${Number(context.raw).toLocaleString("en-IN")}`
+              : ` Orders: ${context.raw}`,
         },
       },
-      datalabels: {
-        color: "#fff",
-        font: {
-          size: 16,
-          weight: "bold",
-        },
-        formatter: (value, context) => {
-          const percentage = (
-            (value / totalOrders) *
-            100
-          ).toFixed(1);
-          return `${percentage}%`;
+    },
+    scales: {
+      revenue: {
+        type: "linear",
+        position: "left",
+        beginAtZero: true,
+        title: { display: true, text: "Revenue (₹)" },
+        ticks: { callback: (value) => `₹${Number(value).toLocaleString("en-IN")}` },
+      },
+      orders: {
+        type: "linear",
+        position: "right",
+        beginAtZero: true,
+        grid: { drawOnChartArea: false },
+        title: { display: true, text: "Orders" },
+        ticks: { precision: 0 },
+      },
+    },
+  };
+
+  const statusCounts = orderStatuses.map(([key]) => Number(orderData[key] || 0));
+  const totalOrders = statusCounts.reduce((sum, count) => sum + count, 0);
+  const doughnutData = {
+    labels: orderStatuses.map(([, label]) => label),
+    datasets: [
+      {
+        data: statusCounts,
+        backgroundColor: orderStatuses.map(([, , color]) => color),
+        borderWidth: 0,
+        hoverOffset: 6,
+      },
+    ],
+  };
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: "68%",
+    plugins: {
+      legend: { position: "bottom" },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            const value = Number(context.raw || 0);
+            const percentage = totalOrders
+              ? ((value / totalOrders) * 100).toFixed(1)
+              : "0.0";
+            return `${context.label}: ${value} (${percentage}%)`;
+          },
         },
       },
     },
   };
 
   return (
-    <div className="w-full min-h-screen p-5 bg-gray-100">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Line Chart */}
-          <div className="bg-white shadow-lg rounded-lg p-6 w-full min-h-[400px]">
-            <h2 className="text-xl md:text-2xl font-bold mb-4">
-              Monthly Revenue & Orders
-            </h2>
-            <Line data={lineChartData} />
+    <div className="space-y-3">
+      {lastUpdated && (
+        <p className="text-right text-xs text-slate-500">
+          Analytics refreshed {lastUpdated.toLocaleTimeString()}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-5">
+            <h3 className="font-bold text-slate-900">Revenue and order volume</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Monthly totals for the last 12 months
+            </p>
           </div>
-
-          {/* Doughnut Chart */}
-          <div className="bg-white shadow-lg rounded-lg p-6 w-full min-h-[400px]">
-            <h2 className="text-xl md:text-2xl font-bold mb-4">
-              Order Status Distribution
-            </h2>
-            <Doughnut data={doughnutChartData} options={doughnutOptions} />
+          <div className="relative h-80">
+            {isLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                Loading analytics...
+              </div>
+            ) : (
+              <Line data={lineChartData} options={lineOptions} />
+            )}
           </div>
-        </div>
+        </section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-5">
+            <h3 className="font-bold text-slate-900">Order status</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Distribution across the current order lifecycle
+            </p>
+          </div>
+          <div className="relative h-80">
+            {isLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                Loading order statuses...
+              </div>
+            ) : totalOrders === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                No orders available for reporting.
+              </div>
+            ) : (
+              <Doughnut data={doughnutData} options={doughnutOptions} />
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );

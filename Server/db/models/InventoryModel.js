@@ -15,9 +15,19 @@ const inventorySchema = new mongoose.Schema(
       enum: ["veg", "non-veg"],
       required: true,
     },
-    price: { type: Number, required: true },
-    stock: { type: Number, required: true, min: [0, "Stock cannot be below 0"] },
-    threshold: { type: Number, required: true },
+    price: { type: Number, required: true, min: 0 },
+    stock: {
+      type: Number,
+      required: true,
+      min: [0, "Stock cannot be below 0"],
+      validate: Number.isInteger,
+    },
+    threshold: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: Number.isInteger,
+    },
     status: {
       type: String,
       enum: ["available", "out of stock"],
@@ -36,33 +46,34 @@ inventorySchema.pre("save", function (next) {
 
 inventorySchema.post("save", async function (doc, next) {
   try {
-    if (doc.stock <= 0) {
-      doc.status = "out of stock";
-      await doc.save();
-
-      // Find all pizzas that use this inventory item
-      const Pizza = mongoose.model("Pizza");
-      const pizzasToUpdate = await Pizza.find({
-        $or: [
-          { base: doc._id }, // Ensure only the _id is used
-          { sauce: doc._id },
-          { cheese: doc._id },
-          { toppings: doc._id },
-        ],
-      });
-
-      if (pizzasToUpdate.length > 0) {
-        const bulkOps = pizzasToUpdate.map((pizza) => ({
-          updateOne: {
-            filter: { _id: pizza._id },
-            update: { status: "unavailable" },
-          },
-        }));
-
-        // Bulk update pizza status
-        await Pizza.bulkWrite(bulkOps);
-
-      }
+    const Pizza = mongoose.model("Pizza");
+    const affectedPizzas = await Pizza.find({
+      $or: [
+        { base: doc._id },
+        { sauce: doc._id },
+        { cheese: doc._id },
+        { toppings: doc._id },
+      ],
+    }).populate("base sauce cheese toppings");
+    const bulkOps = affectedPizzas.map((pizza) => {
+      const ingredients = [
+        pizza.base,
+        ...(pizza.sauce || []),
+        ...(pizza.cheese || []),
+        ...(pizza.toppings || []),
+      ];
+      const available =
+        ingredients.length > 0 &&
+        ingredients.every((ingredient) => ingredient && ingredient.stock > 0);
+      return {
+        updateOne: {
+          filter: { _id: pizza._id },
+          update: { $set: { status: available ? "available" : "unavailable" } },
+        },
+      };
+    });
+    if (bulkOps.length > 0) {
+      await Pizza.bulkWrite(bulkOps);
     }
 
     // Check if stock is below the threshold
@@ -102,56 +113,6 @@ inventorySchema.post("save", async function (doc, next) {
     next();
   } catch (error) {
     console.error("Error in inventory post-save middleware:", error);
-    next(error);
-  }
-});
-
-inventorySchema.pre("findOneAndDelete", async function (next) {
-  try {
-    const doc = await this.model.findOne(this.getFilter());
-    if (!doc) {
-      console.warn("No document found for deletion");
-      return next();
-    }
-
-
-    const Pizza = mongoose.model("Pizza");
-    const pizzasToUpdate = await Pizza.find({
-      $or: [
-        { base: doc._id },
-        { sauce: doc._id },
-        { cheese: doc._id },
-        { toppings: doc._id },
-      ],
-    });
-
-    if (pizzasToUpdate.length > 0) {
-      const bulkOps = pizzasToUpdate.map((pizza) => ({
-        updateOne: {
-          filter: { _id: pizza._id },
-          update: {
-            $pull: {
-              base: doc._id,
-              sauce: doc._id,
-              cheese: doc._id,
-              toppings: doc._id,
-            },
-          },
-        },
-      }));
-
-      await Pizza.bulkWrite(bulkOps);
-    }
-
-    const Order = mongoose.model("Order");
-    const ordersToUpdate = await Order.updateMany(
-      { "customizations.inventoryItem": doc._id },
-      { $pull: { customizations: { inventoryItem: doc._id } } }
-    );
-
-    next();
-  } catch (error) {
-    console.error("Error in inventory pre-remove middleware:", error);
     next(error);
   }
 });

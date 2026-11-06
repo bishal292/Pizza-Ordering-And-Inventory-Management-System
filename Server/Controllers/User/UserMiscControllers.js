@@ -6,11 +6,19 @@ import { isValidObjectId } from "mongoose";
 import { calculatePrice } from "../../utils/pizza-pricing.js";
 import {
   checkOrderStatus,
-  checkPayment,
   createPayment,
+  findCapturedPayment,
   refundOrder,
 } from "../../Services/RazorPay.js";
 import { Order } from "../../db/models/Orders.js";
+import {
+  cancelOrderAndReleaseInventory,
+  createReservedOrder,
+  formatOrderWithSnapshots,
+  markOrderRefunded,
+  notifyNewOrder,
+  updateOrderPaymentStatus,
+} from "../../Services/OrderWorkflowService.js";
 
 export const getPizzas = async (req, res, next) => {
   try {
@@ -42,16 +50,31 @@ export const addToCart = async (req, res, next) => {
     }
 
     const { item } = req.body;
-    if (!item) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
       return res.status(400).send("Item is required");
     }
 
     const { pizzaId, customizations = {} } = item;
-    if (!pizzaId || !isValidObjectId(pizzaId)) {
+    if (
+      !customizations ||
+      typeof customizations !== "object" ||
+      Array.isArray(customizations) ||
+      !["sauce", "cheese", "toppings"].every(
+        (category) =>
+          customizations[category] === undefined ||
+          Array.isArray(customizations[category])
+      )
+    ) {
+      return res.status(400).send("Invalid customizations");
+    }
+    if (typeof pizzaId !== "string" || !isValidObjectId(pizzaId)) {
       return res.status(400).send("Pizza ID is required and must be valid");
     }
 
-    const pizza = await Pizza.findById(pizzaId).populate("base", "price");
+    const pizza = await Pizza.findById(pizzaId).populate(
+      "base",
+      "name price category status"
+    );
     if (!pizza) {
       return res.status(404).send("Pizza not found");
     }
@@ -109,7 +132,9 @@ export const addToCart = async (req, res, next) => {
     res.status(201).send("Pizza added to cart");
   } catch (error) {
     console.error(error.message);
-    res.status(500).send("Internal Server Error");
+    res.status(error.statusCode || 500).send(
+      error.statusCode ? error.message : "Internal Server Error"
+    );
   }
 };
 // Helper function to compare arrays regardless of order
@@ -155,7 +180,7 @@ export const getCart = async (req, res, next) => {
         select: "name -_id",
       });
     if (!cart) {
-      return res.status(204).send("Cart is Empty");
+      return res.status(200).json({ items: [] });
     }
     res.status(200).json(cart);
   } catch (error) {
@@ -269,125 +294,58 @@ export const placeOrder = async (req, res, next) => {
       return res.status(404).send("User not found");
     }
 
-    const tableNo = parseInt(req.body.tableNo);
-    if (!tableNo) {
-      return res.status(400).send("Table number is required");
+    const tableNo = Number(req.body.tableNo);
+    if (!Number.isInteger(tableNo) || tableNo < 1) {
+      return res.status(400).send("A valid table number is required");
     }
 
-    const cart = await Cart.findOne({ user: userId });
-    if (!cart || cart.items.length < 1) {
+    const { order, emptyCart } = await createReservedOrder({ userId, tableNo });
+    if (emptyCart) {
       return res.status(200).json({ message: "Cart is empty", order: [] });
     }
 
-    const outOfStockItems = [];
-
-    // Check stock for each item in the cart and store information.
-    const stockCounter = {};
-
-    for (const item of cart.items) {
-      const qty = item.quantity;
-
-      const pizza = await Pizza.findById(item.pizza).populate(
-        "base",
-        "name price stock status"
-      );
-
-      if (!pizza || pizza.status === "unavailable") {
-        outOfStockItems.push({
-          name: pizza?.name || "Unknown Pizza",
-          reason: "Pizza unavailable",
-        });
-        continue;
-      }
-      const baseId = item.customizations.base || pizza.base._id.toString();
-      stockCounter[baseId] = (stockCounter[baseId] || 0) + qty;
-
-      const allSauces = [
-        ...(pizza.sauce || []),
-        ...(item.customizations.sauce || []),
-      ];
-      for (const sauceId of allSauces) {
-        stockCounter[sauceId] = (stockCounter[sauceId] || 0) + qty * 5;
-      }
-
-      const allCheeses = [
-        ...(pizza.cheese || []),
-        ...(item.customizations.cheese || []),
-      ];
-      for (const cheeseId of allCheeses) {
-        stockCounter[cheeseId] = (stockCounter[cheeseId] || 0) + qty * 5;
-      }
-
-      const allToppings = [
-        ...(pizza.toppings || []),
-        ...(item.customizations.toppings || []),
-      ];
-      for (const toppingId of allToppings) {
-        stockCounter[toppingId] = (stockCounter[toppingId] || 0) + qty * 10;
-      }
-    }
-
-    const ingredientIds = Object.keys(stockCounter);
-    const inventoryItems = await Inventory.find({
-      _id: { $in: ingredientIds },
-    });
-
-    for (const ingredient of inventoryItems) {
-      const totalRequired = stockCounter[ingredient._id.toString()];
-
-      if (ingredient.stock < totalRequired) {
-        outOfStockItems.push({
-          name: ingredient.name,
-          category: ingredient.category,
-          reason: `Out of stock. Required: ${totalRequired}, Available: ${ingredient.stock}`,
-        });
-      }
-    }
-
-    if (outOfStockItems.length > 0) {
-      return res.status(400).json({
+    const order_Razor = await createPayment(order.totalPrice, order.dailyOrderId);
+    if (!order_Razor.success) {
+      return res.status(502).json({
         message:
-          "Some items are out of stock Please remove them or wait for item to be available in Stock.",
-        outOfStockItems,
+          "Your order is reserved, but payment could not be initialized. Open order history to retry payment.",
+        orderId: order._id,
       });
     }
 
-    const dailyOrderId = await Order.generateDailyOrderId();
-    const order_Razor = await createPayment(cart.totalPrice,dailyOrderId);
-    const order = new Order({
-      userId,
-      items: cart.items,
-      totalPrice: cart.totalPrice,
-      dailyOrderId,
-      orderId: order_Razor?.success ? order_Razor.order.id : dailyOrderId,
-      tableNo,
-    });
-    await order.save();
-
-    if (!order) {
-      return res.status(500).json({ message: "Failed to place order" });
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: order._id, userId, status: "pending" },
+      { $set: { orderId: order_Razor.order.id } },
+      { new: true, runValidators: true }
+    );
+    if (!updatedOrder) {
+      return res.status(409).send("Order changed while payment was being created");
     }
-
-    const isCartClear = await Cart.findOneAndDelete({ user: userId });
-    if (!isCartClear) {
-      return res
-        .status(201)
-        .json({
-          message: "Failed to clear cart but created Order",
-          order: order_Razor?.order || [],
-          _id: order._id,
-        });
-    }
+    notifyNewOrder(order);
 
     res.status(201).json({
       _id: order._id,
       message: "Order placed successfully",
-      order: order_Razor?.order || [],
+      order: order_Razor.order,
     });
-    
   } catch (error) {
     console.error(error.message);
-    res.status(500).send("Internal Server Error");
+    if (error.outOfStockItems) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+        outOfStockItems: error.outOfStockItems,
+      });
+    }
+    if (error.orderId) {
+      return res.status(error.statusCode || 500).json({
+        message:
+          "Checkout could not finish cleanup. Check your order history before trying again.",
+        orderId: error.orderId,
+      });
+    }
+    return res.status(error.statusCode || 500).json({
+      message: error.statusCode ? error.message : "Internal Server Error",
+    });
   }
 };
 
@@ -405,7 +363,7 @@ export const getOrders = async (req, res, next) => {
       "preparing": 2,
       "placed": 3,
       "pending": 4,
-      "delivered": 5,
+      "completed": 5,
       "cancelled": 6
     };
 
@@ -420,7 +378,7 @@ export const getOrders = async (req, res, next) => {
                 { case: { $eq: ["$status", "preparing"] }, then: statusOrder["preparing"] },
                 { case: { $eq: ["$status", "placed"] }, then: statusOrder["placed"] },
                 { case: { $eq: ["$status", "pending"] }, then: statusOrder["pending"] },
-                { case: { $eq: ["$status", "delivered"] }, then: statusOrder["delivered"] },
+                { case: { $eq: ["$status", "completed"] }, then: statusOrder["completed"] },
                 { case: { $eq: ["$status", "cancelled"] }, then: statusOrder["cancelled"] }
               ],
               default: 10
@@ -437,25 +395,28 @@ export const getOrders = async (req, res, next) => {
     ]);
 
     if (!orders || orders.length === 0) {
-      return res.status(204).send("No orders found");
+      return res.status(200).json([]);
     }
 
     // Fetch order details and populate items
     const populatedOrders = await Order.populate(orders, { path: "items.pizza" });
 
     // Format the response
-    const formattedOrders = populatedOrders.map((order) => ({
-      _id: order._id,
-      totalPrice: order.totalPrice,
-      totalQuantity: order.items.reduce((sum, item) => sum + item.quantity, 0),
-      image: order.items[0]?.pizza?.image || null,
-      orderId: order.orderId || null,
-      dailyOrderId: order.dailyOrderId,
-      status: order.status,
-      tableNo: order.tableNo,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-    }));
+    const formattedOrders = populatedOrders.map((rawOrder) => {
+      const order = formatOrderWithSnapshots(rawOrder);
+      return {
+        _id: order._id,
+        totalPrice: order.totalPrice,
+        totalQuantity: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        image: order.items[0]?.pizza?.image || null,
+        orderId: order.orderId || null,
+        dailyOrderId: order.dailyOrderId,
+        status: order.status,
+        tableNo: order.tableNo,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      };
+    });
 
     res.status(200).json(formattedOrders);
   } catch (error) {
@@ -473,15 +434,16 @@ export const getOrderDetails = async (req, res, next) => {
       return res.status(404).json({ message: "User not found" });
     }
     const { id: orderId } = req.query;
-    if (!orderId || !isValidObjectId(orderId)) {
+    if (typeof orderId !== "string" || !isValidObjectId(orderId)) {
       return res.status(400).send("Order ID is required and must be valid");
     }
 
-    const order = await Order.findById(orderId)
+    const order = await Order.findOne({ _id: orderId, userId })
       .populate({
         path: "items.pizza",
         model: Pizza,
         populate: [
+          { path: "size", model: Inventory, select: "name -_id" },
           { path: "base", model: Inventory, select: "name -_id" },
           { path: "sauce", model: Inventory, select: "name -_id" },
           { path: "cheese", model: Inventory, select: "name -_id" },
@@ -508,10 +470,8 @@ export const getOrderDetails = async (req, res, next) => {
         model: Inventory,
         select: "name -_id",
       });
-    if (!order) {
-      return res.status(204).json({ message: "Order not found" });
-    }
-    res.status(200).json(order);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    res.status(200).json(formatOrderWithSnapshots(order));
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
@@ -526,54 +486,73 @@ export const cancelOrder = async (req, res, next) => {
       return res.status(404).send("Your User Account not Found.");
     }
     const { id: orderId } = req.query;
-    if (!orderId || !isValidObjectId(orderId)) {
+    if (typeof orderId !== "string" || !isValidObjectId(orderId)) {
       return res.status(400).send("Order ID is required and must be valid");
     }
-    const order = await Order.findById(orderId);
+    let order = await Order.findOne({ _id: orderId, userId });
     if (!order) {
       return res.status(404).send("Order not found");
     }
 
-    if (order.status === "cancelled") {
-      return res.status(400).send("Order already cancelled");
+    if (order.status === "pending" && order.orderId.startsWith("order_")) {
+      const payment = await findCapturedPayment(order.orderId, order.totalPrice);
+      if (!payment.success) {
+        return res.status(502).send("Unable to confirm payment status. Please retry.");
+      }
+      if (payment.isPaid) {
+        order = await updateOrderPaymentStatus(
+          order._id,
+          payment.payment.id,
+          userId,
+          order.orderId
+        );
+        if (!order) {
+          order = await Order.findOne({ _id: orderId, userId });
+        }
+      }
     }
 
-    if (order.status === "pending") {
-      const updatedOrder = await Order.findByIdAndUpdate(orderId, {
-        status: "cancelled",
-      });
-      if (!updatedOrder) {
-        return res.status(500).send("Failed to update order Status.");
-      }
-      return res.status(200).send("Order Cancelled Successfully");
-    } else if (order.status === "placed") {
-      const updatedOrder = await Order.findByIdAndUpdate(orderId, {
-        status: "cancelled",
-      });
-      if (!updatedOrder) {
-        return res.status(500).send("Failed to update order Status.");
-      }
-      // Refund Payment
-      const refundStaus = refundOrder(order.orderId);
-      if (!(await refundStaus).success) {
-        return res
-          .status(500)
-          .send(
-            "Order Cancelled Successfully but Payment Refund Failed,Please Contact Support."
-          );
-      }
-      return res
-        .status(200)
-        .send("Order Cancelled Successfully and Payment Refund intiated.");
-    }
-    return res
-      .status(400)
-      .send(
-        "Order cannot be cancelled now as it is already in preparation or delivered. Please Contact the Restaurant Support for further assistance."
+    const cancelledOrder = await cancelOrderAndReleaseInventory({ orderId, userId });
+    if (!cancelledOrder) {
+      return res.status(409).send(
+        "Order cannot be cancelled because its status has changed or preparation has started."
       );
+    }
+
+    if (cancelledOrder.paymentStatus === "refund_pending") {
+      const refund = await refundOrder(
+        cancelledOrder.orderId,
+        cancelledOrder.paymentId
+      );
+      if (refund.success) {
+        try {
+          const refundedOrder = await markOrderRefunded(
+            cancelledOrder._id,
+            refund.refund.id
+          );
+          if (!refundedOrder) {
+            return res.status(202).send(
+              "Refund was submitted, but its order status needs reconciliation."
+            );
+          }
+        } catch (error) {
+          console.error("Refund succeeded but order status could not be reconciled:", error);
+          return res.status(202).send(
+            "Refund was submitted, but its order status needs reconciliation."
+          );
+        }
+        return res.status(200).send("Order cancelled and refund initiated.");
+      }
+      return res.status(202).send(
+        "Order cancelled; refund is pending and requires support follow-up."
+      );
+    }
+    return res.status(200).send("Order cancelled successfully.");
   } catch (error) {
     console.error(error.message);
-    res.status(500).send("Internal Server Error");
+    res.status(error.statusCode || 500).send(
+      error.statusCode ? error.message : "Internal Server Error"
+    );
   }
 };
 
@@ -585,10 +564,10 @@ export const completePayment = async (req, res, next) => {
       return res.status(404).send("User not found");
     }
     const { id: orderId } = req.query;
-    if (!orderId || !isValidObjectId(orderId)) {
+    if (typeof orderId !== "string" || !isValidObjectId(orderId)) {
       return res.status(400).send("Order ID is required and must be valid");
     }
-    const order = await Order.findById(orderId);
+    const order = await Order.findOne({ _id: orderId, userId });
     if (!order) {
       return res.status(404).send("Order not found");
     }
@@ -599,26 +578,49 @@ export const completePayment = async (req, res, next) => {
     const orderStatus = await checkOrderStatus(order.orderId);
 
     if (!orderStatus?.success) {
-      const createorderpay = await createPayment(order.totalPrice,order.dailyOrderId);
+      if (order.orderId.startsWith("order_")) {
+        return res.status(502).send("Unable to confirm payment provider status. Please retry.");
+      }
+      const createorderpay = await createPayment(order.totalPrice, order.dailyOrderId);
       if (!createorderpay.success) {
         return res
           .status(500)
           .send("Failed to create payment order.Please try again later.");
       }
-      await Order.findOneAndUpdate(
-        { _id: orderId },
-        {
-          orderId: createorderpay.order.id,
-        }
+      const updatedOrder = await Order.findOneAndUpdate(
+        { _id: orderId, userId, status: "pending" },
+        { $set: { orderId: createorderpay.order.id } },
+        { new: true, runValidators: true }
       );
+      if (!updatedOrder) {
+        return res.status(409).send("Order changed while payment was being created.");
+      }
       return res.status(200).json({
         message: "Payment Order Created Successfully",
         order: createorderpay.order,
       });
     }
     if (orderStatus?.isPaid) {
-      await Order.findOneAndUpdate({ _id: orderId }, { status: "placed" });
-      res.status(400).json({ message: "Order is already paid." });
+      const payment = await findCapturedPayment(order.orderId, order.totalPrice);
+      if (!payment.success) {
+        return res.status(502).send("Unable to verify payment details.");
+      }
+      if (!payment.isPaid) {
+        return res.status(409).send("Captured payment details do not match this order.");
+      }
+      const updatedOrder = await updateOrderPaymentStatus(
+        order._id,
+        payment.payment.id,
+        userId,
+        order.orderId
+      );
+      if (!updatedOrder) {
+        return res.status(409).send("Order payment has already been processed.");
+      }
+      return res.status(200).json({
+        message: "Order payment confirmed",
+        order: updatedOrder,
+      });
     }
     res.status(200).json({
       message: "Order Payment Details",

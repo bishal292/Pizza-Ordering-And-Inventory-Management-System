@@ -13,29 +13,33 @@ dotenv.config();
 // };
 
 
-let cachedConnection = null;
+let connectionPromise = null;
+mongoose.connection.on("disconnected", () => {
+  connectionPromise = null;
+});
 
 export async function connectDB() {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (connectionPromise) return connectionPromise;
   if (!process.env.DB_URL) {
     throw new Error("DB_URL is not defined in environment variables.");
   }
 
-  if (cachedConnection) {
-    return cachedConnection;
-  }
-
-  try {
-    const conn = await mongoose.connect(process.env.DB_URL, {
-      useUnifiedTopology: true,
+  connectionPromise = mongoose
+    .connect(process.env.DB_URL, {
+      serverSelectionTimeoutMS: 10000,
+    })
+    .then((connection) => {
+      console.log("MongoDB connected");
+      return connection;
+    })
+    .catch((error) => {
+      console.error("MongoDB connection error:", error.message);
+      connectionPromise = null;
+      throw error;
     });
 
-    cachedConnection = conn;
-    console.log("MongoDB connected");
-    return conn;
-  } catch (error) {
-    console.error("MongoDB connection error:", error);
-    throw error;
-  }
+  return connectionPromise;
 }
 
 export async function getDBConnection() {

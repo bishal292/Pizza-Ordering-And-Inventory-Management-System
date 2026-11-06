@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiClient } from "@/utils/api-client";
 import { FaTrash } from "react-icons/fa";
 import { toast } from "sonner";
@@ -7,15 +7,12 @@ import {
   ADMIN_DELETE_PIZZA,
   ADMIN_GET_PIZZAS,
   ADMIN_INVENTORY,
-  ADMIN_UPLOAD_PIZZA_IMAGE,
-  HOST,
 } from "@/utils/constant";
 import UpdatePizza from "./UpdatePizza";
 import { Link } from "react-router-dom";
 import LoadingScreen from "@/components/LoadingScreen";
 import {
   handleImageUploadCloudinary,
-  handleImageUploadLocally,
 } from "@/Services/ImageUpload.service";
 
 const AdminPizza = () => {
@@ -39,7 +36,6 @@ const AdminPizza = () => {
     price: "",
   });
 
-  const [editablePizzaId, setEditablePizzaId] = useState(null);
   const [editablePizza, setEditablePizza] = useState({});
 
   useEffect(() => {
@@ -52,7 +48,7 @@ const AdminPizza = () => {
         if (response.status === 200) {
           setPizzas(response.data);
         }
-      } catch (error) {
+      } catch {
         toast.error("Error fetching pizzas");
       } finally {
         setIsLoaded(true);
@@ -67,7 +63,7 @@ const AdminPizza = () => {
         if (response.status === 200) {
           setInventory(response.data);
         }
-      } catch (error) {
+      } catch {
         toast.error("Error fetching inventory");
       }
     };
@@ -101,9 +97,6 @@ const AdminPizza = () => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      // newPizza.image = await handleImageUploadLocally(newPizza.image); // -> Used to upload the image locally Using Multer.
-
-      // Upload image to Cloudinary
       const cloudResponse = await handleImageUploadCloudinary(newPizza.image);
 
       if(!cloudResponse) {
@@ -111,13 +104,17 @@ const AdminPizza = () => {
         return;
       }
 
-      newPizza.image = cloudResponse;
-      const response = await apiClient.post(ADMIN_ADD_PIZZA, newPizza, {
+      const response = await apiClient.post(
+        ADMIN_ADD_PIZZA,
+        { ...newPizza, image: cloudResponse },
+        {
         withCredentials: true,
-      });
+        }
+      );
       if (response.status === 201) {
         toast.success("Pizza Added Successfully");
-        setPizzas([response.data.pizza, ...pizzas]);
+        setPizzas((current) => [response.data.pizza, ...current]);
+        setIsPopupOpen(false);
         setNewPizza({
           name: "",
           image: null,
@@ -131,9 +128,12 @@ const AdminPizza = () => {
         });
       }
     } catch (error) {
-      toast.error(error.response.data?.message || error.response.data);
+      toast.error(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Unable to add pizza. Please try again."
+      );
     } finally {
-      setIsPopupOpen(false);
       setIsSubmitting(false);
     }
   };
@@ -152,7 +152,11 @@ const AdminPizza = () => {
         setPizzas(pizzas.filter((pizza) => pizza._id !== pizzaToDelete));
       }
     } catch (error) {
-      toast.error(error.response.data?.message || error.response.data);
+      toast.error(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Unable to delete pizza. Please try again."
+      );
     } finally {
       setIsDeletePopupOpen(false);
       setIsSubmitting(false);
@@ -166,7 +170,6 @@ const AdminPizza = () => {
       )
     );
     setIsUpdateScreenOpen(false);
-    setEditablePizzaId(null);
     setEditablePizza({});
   };
 
@@ -175,12 +178,18 @@ const AdminPizza = () => {
   }
 
   return (
-    <div className="p-6 font-sans">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Pizzas</h1>
+    <main className="min-h-full bg-[#faf8f5] px-4 py-6 font-sans sm:px-7 sm:py-9">
+      <div className="mx-auto max-w-7xl">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-[0.16em] text-orange-700">Menu management</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-stone-900">Pizzas</h1>
+          <p className="mt-1 text-sm text-stone-500">Manage recipes, availability, and menu pricing.</p>
+        </div>
         <button
+          type="button"
           disabled={isSubmitting}
-          className="bg-green-500 text-white px-4 py-2 rounded"
+          className="rounded-lg bg-orange-600 px-4 py-2.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:opacity-60"
           onClick={() => setIsPopupOpen(true)}
         >
           Add New Pizza
@@ -191,46 +200,60 @@ const AdminPizza = () => {
           pizza={editablePizza}
           inventory={inventory}
           onClose={() => {
-            setIsUpdateScreenOpen(false);
-            setEditablePizzaId(null);
-            setEditablePizza({});
+          setIsUpdateScreenOpen(false);
+          setEditablePizza({});
           }}
           onUpdate={handleUpdate}
         />
       )}
-      <div className="grid grid-cols-3 gap-4">
+      {pizzas.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-stone-300 bg-white px-6 py-14 text-center">
+          <h2 className="text-lg font-semibold text-stone-800">No pizzas in the menu yet</h2>
+          <p className="mt-1 text-sm text-stone-500">Add a pizza to start building your menu.</p>
+        </div>
+      ) : (
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {pizzas.map((pizza) => (
           <div
             key={pizza._id}
-            className="bg-white shadow-lg rounded-lg overflow-hidden hover:shadow-xl transition"
+            className="group overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
           >
             <Link to={`/admin/pizza/${pizza._id}`}>
               <img
                 src={`${pizza.image}`}
                 alt={pizza.name}
-                className="w-full h-48 object-cover"
+                className="h-52 w-full bg-stone-100 object-cover transition duration-300 group-hover:scale-[1.02]"
+                onError={(event) => {
+                  event.currentTarget.style.visibility = "hidden";
+                }}
               />
-              <div className="p-4">
-                <h2 className="text-xl font-semibold text-gray-800">
-                  {pizza.name}
-                </h2>
-                <p className="text-gray-600">{pizza.description}</p>
-                <p className="text-gray-700 font-bold mt-2">
-                  Size: {pizza?.size?.name}
-                </p>
-                <p>
-                  Price:{" "}
-                  <span className="text-green-600 font-bold">
-                    ₹ {pizza.price}
+              <div className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-stone-900">{pizza.name}</h2>
+                    <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-stone-500">
+                      {pizza.description}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
+                    pizza.status === "available"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}>
+                    {pizza.status || "Unavailable"}
                   </span>
-                </p>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-4">
+                  <span className="text-sm text-stone-500">{pizza?.size?.name || "Size not set"}</span>
+                  <span className="text-lg font-bold text-stone-900">₹{Number(pizza.price).toFixed(2)}</span>
+                </div>
               </div>
             </Link>
-            <div className="flex justify-between p-4">
+            <div className="flex gap-2 px-5 pb-5">
               <button
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+                type="button"
+                className="flex-1 rounded-lg border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"
                 onClick={() => {
-                  setEditablePizzaId(pizza._id);
                   setEditablePizza(pizza);
                   setIsUpdateScreenOpen(true);
                 }}
@@ -238,7 +261,9 @@ const AdminPizza = () => {
                 Update
               </button>
               <button
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
+                type="button"
+                aria-label={`Delete ${pizza.name}`}
+                className="rounded-lg border border-red-200 px-4 py-2 text-red-700 transition hover:bg-red-50"
                 onClick={() => {
                   setPizzaToDelete(pizza._id);
                   setIsDeletePopupOpen(true);
@@ -250,9 +275,10 @@ const AdminPizza = () => {
           </div>
         ))}
       </div>
+      )}
       {isPopupOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded shadow-lg w-1/2 max-h-screen overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-7">
             <h2 className="text-xl font-semibold mb-4">Add New Pizza</h2>
             <form className="space-y-4" onSubmit={addPizza}>
               <div>
@@ -422,8 +448,8 @@ const AdminPizza = () => {
         </div>
       )}
       {isDeletePopupOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded shadow-lg w-1/3">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
             <h2 className="text-xl font-semibold mb-4">Confirm Deletion</h2>
             <p>Are you sure you want to delete this pizza?</p>
             <div className="flex justify-end space-x-4 mt-4">
@@ -443,7 +469,8 @@ const AdminPizza = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </main>
   );
 };
 

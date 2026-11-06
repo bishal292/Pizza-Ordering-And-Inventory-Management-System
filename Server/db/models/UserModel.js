@@ -27,6 +27,7 @@ const UserSchema = new mongoose.Schema({
     passwordChangedAt: Date,
     resetOTP: String,
     resetOTPExpires: Date,
+    resetOTPAttempts: { type: Number, default: 0, min: 0, max: 5 },
 });
 
 
@@ -50,13 +51,13 @@ UserSchema.pre("findOneAndUpdate", async function (next) {
 });
 
 UserSchema.methods.createPasswordResetOTP = function () {
-    const resetToken = (Math.floor(100000 + Math.random() * 900000)).toString();
+    const resetToken = crypto.randomInt(100000, 1000000).toString();
     
     this.resetOTP = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
-   
+    this.resetOTPAttempts = 0;
     this.resetOTPExpires = Date.now() + 15 * 60 * 1000 ;
     return resetToken;
   };
