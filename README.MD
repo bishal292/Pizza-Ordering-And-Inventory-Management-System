@@ -1,226 +1,203 @@
-# 🍕 Pizza Ordering & Inventory Management System (MERN Stack)
+# Pizza Delivery System
 
-This is a full-stack pizza delivery application built using the **MERN Stack** (MongoDB, Express.js, React.js, Node.js). It allows users to customize and order pizzas while providing an admin panel to manage inventory, users, pizzas, and orders.
+A full-stack pizza ordering and inventory management application. Customers can
+customize pizzas, place and track orders, and pay online. Administrators can
+manage pizzas, ingredients, customers, and orders from a separate dashboard.
 
----
+## Live demos
 
-## 🔗 Live Demo
+- [Customer application](https://pds-client-gamma.vercel.app/)
+- [Admin dashboard](https://pds-admin-ten.vercel.app/)  while creating admin account use `1234` as secret code to create account
 
-> 🚀 Deployed at: [Client Side](https://pds-client-gamma.vercel.app/)
-      [Admin Panel](https://pds-admin-ten.vercel.app/)
+## Features
 
----
-## 📸 SnapShots
+### Customer experience
 
-### 🔐 AUTH
+- Browse available pizzas and customize size, crust, sauce, cheese, and toppings.
+- Manage a cart and place orders with Razorpay checkout.
+- View order history and follow order status updates in real time.
+- Create an account, sign in, and reset a password using email OTP verification.
 
-- ![User Login](./SnapShots/userAuth.png) — User login screen
-- ![User Signup](./SnapShots/userAuthSignup.png) — User registration/signup form
-- ![Forgot Password](./SnapShots/userauthforgot.png) — Forgot password page with OTP request
-- ![Reset Password](./SnapShots/userauthreset.png) — Reset password using OTP screen
-- ![User Password Reset](./SnapShots/UserResetPass.png) — Password reset confirmation screen
-- ![Admin Signup](./SnapShots/adminSighnup.png) — Admin signup screen(Requires Admin Secret Key To signup)
-- ![OTP Mail Received](./SnapShots/MailTrapReceivedOtp.png) — OTP received in email inbox (MailTrap)
+### Administration
 
-### 🧑‍💼 ADMIN
+- Create, update, and remove pizzas and inventory items.
+- Search and filter inventory, with low-stock alerts.
+- Review customers, carts, and orders; update order status.
+- View dashboard metrics and revenue and order charts.
 
-- ![Admin Dashboard Overview](./SnapShots/AdminDashboard1.png) — Admin dashboard with KPIs and charts
-- ![Admin Revenue Chart](./SnapShots/AdminDashboard2.png) — Revenue and order analytics graph
-- ![Add New Pizza](./SnapShots/AdminAddnewPizz.png) — Form to create new pizza option
-- ![Update Existing Pizza](./SnapShots/AdminUpdatePizza.png) — Form to update existing pizza
-- ![Pizza List](./SnapShots/AdminPizzaList.png) — List of all available pizzas
-- ![Delete Pizza Confirmation](./SnapShots/AdminDeletePizzaConfirm.png) — Confirm pizza delete modal
-- ![Add New Inventory Item](./SnapShots/AdminAdd_new_Inv_item.png) — Add new inventory item to stock
-- ![User List](./SnapShots/AdminUsersList.png) — View all registered users
-- ![Edit User](./SnapShots/AdminEditUser.png) — Admin can edit user details
-- ![Search User](./SnapShots/AdminSearchUser.png) — Search user by name or email
-- ![View Orders](./SnapShots/Admin_Viewing_Orders.png) — All user orders for review
-- ![Order Details By ID](./SnapShots/AdminOrderdetailsWithId.png) — View detailed order with specific ID
-- ![User Cart View](./SnapShots/AdminUserCart.png) — View specific user’s cart
-- ![User Orders Overview](./SnapShots/AdminUserOrdersList.png) — View list of orders placed by a user
+### Order and inventory handling
 
-### 🧑 USER
+- Calculate order prices on the server using current pizza and ingredient prices.
+- Reserve ingredient stock during checkout and restore eligible reservations on
+  cancellation.
+- Verify Razorpay payment details on the server before confirming paid orders.
 
-- ![User Landing Page](./SnapShots/UserLandingPage.png) — Public landing page for users
-- ![Home Page Listing](./SnapShots/UserHomePageListingPizzas.png) — Displaying all available pizzas
-- ![Customize Pizza](./SnapShots/UserCustomizingPizza.png) — User customizing pizza ingredients
-- ![User Cart](./SnapShots/UserViewingCart.png) — User’s cart with pizzas and quantities
-- ![Confirm Order](./SnapShots/UserConfirmOrder.png) — Final confirmation before placing order
-- ![Cancel Order With Payment](./SnapShots/UserCancelOrderWithPayment.png) — Order cancelled after payment
-- ![Cancel Order Without Payment](./SnapShots/userCancelOrderWithoutPayment.png) — Cancelled before payment
-- ![Order Payment Page](./SnapShots/OrderPaymentScreen.png) — Razorpay payment integration
-- ![Payment Verified](./SnapShots/OrderPaymentVerified.png) — Razorpay payment success confirmation
-- ![User Orders List](./SnapShots/UserViewingOrders.png) — Past orders with status and details
+## Technology
 
+| Application | Main technologies |
+| --- | --- |
+| Customer app (`client/`) | React, Vite, Tailwind CSS, Zustand, Axios |
+| Admin app (`Admin/`) | React, Vite, Tailwind CSS, Zustand, Axios, Chart.js |
+| API (`Server/`) | Node.js, Express, MongoDB, Mongoose, Socket.IO |
+| Integrations | Razorpay, Nodemailer |
 
-## ⚒️ Tech Stack
+The customer app, admin dashboard, and API are separate applications with
+independent dependencies and environment configuration.
 
-### **Frontend**
+## Run locally
 
-* React.js (with Tailwind CSS / Material UI)
-* Axios
-* React Router
-* Zustand (for cart & user session)
-* Razorpay (Payment Gateway)
+### Requirements
 
-### **Backend**
+- Node.js and npm
+- MongoDB (local or hosted)
+- Razorpay credentials for payment features
+- Email provider credentials for OTP and email notifications
 
-* Node.js
-* Express.js
-* MongoDB with Mongoose
-* Nodemailer (for OTP-based password reset & email verification)
-* JWT + Cookies for authentication/session
-
----
-
-## 📂 Project Structure
-
-```
-Admin/           # React frontend for admin pages
-client/          # React frontend for customers
-Server/          # Express API
-```
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md), [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md),
-[CODE_GUIDELINES.md](./CODE_GUIDELINES.md), and
-[REFACTORING_REPORT.md](./REFACTORING_REPORT.md) for architecture, contribution,
-and refactoring details.
-
----
-
-## ⚙️ Features
-
-### 👨‍🍳 Admin Panel
-
-* 🔧 Manage ingredients, baseType And Size  (create, update, delete, stock, threshold)
-* 🍕 Manage pizzas (create,delete,update including customizing with size, crust, sauce, cheese, toppings,availability)
-* 🛒 View & manage orders (update status: placed → Preparing → prepared → Completed | Cancelled)
-
-* 📊 Analytics dashboard with:
-
-  * Today's orders & revenue
-  * Total orders, users, pizzas
-  * Order status distribution pie chart
-  * Revenue over time (line chart)
-  * 🔔Low Stock Item Alert
-
-### 👨‍🍽️ User Panel
-
-* 🔐 Register/Login (reset with OTP verification)
-* 🫐 Customize your pizza
-* 🛍️ Add to cart & checkout
-* 💳 Pay securely via Razorpay
-* 📬 Track order status live
-
----
-
-## 🍕 Some Demo Pizza Customization Options
-
-* **Size**: Regular, Medium, Large, Extra Large, Monster
-* **Base**: Thin crust, Hand-tossed, Cheese burst, 100% wheat, New York-style
-* **Sauce**: Tomato, Alfredo, Pesto, BBQ, Spicy Arrabbiata
-* **Cheese**: Mozzarella, Cheddar, Parmesan, Goat Cheese, Blue Cheese
-* **Toppings**:
-
-  * **Veg**: Paneer, Mushroom, Onion, Olive, Jalapeño, Tomato, Capsicum
-  * **Non-Veg**: Chicken Tikka, Sausage, Pepperoni, Chicken Keema, BBQ Chicken
-
-Pricing is recalculated from current server-side pizza and inventory prices at checkout.
-
----
-
-## 🔐 Authentication
-
-* Users register andusing thier email.
-* Admin can register using thier email along with the admin secret key.
-* Forgot password flow uses OTP verification to reset Password.
-* Sessions are cookie-based with 3-day expiry.
-* Customers and admins can update their password from their profile settings; admins can also update their display name.
-
----
-
-## 📦 Inventory Management
-
-* Ingredient stock is reserved atomically when checkout creates a pending order, then released on eligible cancellation.
-* Threshold alerts trigger email to admin when stock is low
-* Admins can search inventory, filter by category and stock level, and sort items by stock, name, category, or price.
-
----
-
-## 📊 Admin Analytics
-
-* Total orders, users, pizzas
-* Today's revenue & orders
-* Live order-status distribution and monthly revenue/order charts based on persisted order data, refreshed automatically.
-* List of most valuable users by most order count.
-
----
-
-## 🧪 How to Run Locally
-
-### Clone the Repo
+### 1. Get the project
 
 ```bash
 git clone https://github.com/bishal292/Pizza-Delivery-System.git
-cd pizza-delivery-system
+cd Pizza-Delivery-System
 ```
 
-### Setup Backend
+### 2. Configure and start the API
+
+In a terminal:
 
 ```bash
 cd Server
 npm install
-cp .env.example .env     # Fill in Mongo URI, JWT secret, email credentials and other required details as guided in the .env.example
+```
+
+Copy `Server/.env.example` to `Server/.env` (for PowerShell, use
+`Copy-Item .env.example .env`; for macOS/Linux, use `cp .env.example .env`).
+Set the MongoDB URL, a unique JWT secret, email provider credentials, and
+Razorpay credentials in that file. The API's default port is `5000`.
+
+For local admin signup, set the following in `Server/.env`:
+
+```env
+ADMIN_CREATION_SECRET_KEY=1234
+```
+
+Start the API:
+
+```bash
 npm run dev
 ```
 
-Checkout and cancellation work with standalone MongoDB using conditional
-single-document stock updates and compensating operations. Set `DB_URL` to the
-MongoDB instance you use; do not append `replicaSet=rs0` unless that server is
-actually configured as a replica set. Add Razorpay credentials to the server
-environment and the publishable Razorpay key to each frontend environment;
-never commit real credentials.
+### 3. Configure and start the customer app
 
-Because standalone MongoDB cannot atomically commit changes across the order,
-cart, and inventory collections, the API attempts to reverse earlier updates
-when a later checkout/cancellation step fails. A process crash or database
-failure during compensation can still require manual data reconciliation.
-Replica-set/Atlas transactions are preferable when stronger multi-document
-atomicity is required.
-
-### Setup Frontend
-#### Client
+Open another terminal:
 
 ```bash
 cd client
 npm install
-cp .env.example .env    # Fill in required environment Variables as guided in the .env.example
+```
+
+Copy `client/.env.example` to `.env` using the platform-specific copy command
+above, then set the API URL in `VITE_HOST` (the local default is
+`http://localhost:5000`).
+
+```bash
 npm run dev
 ```
-#### Admin
+
+### 4. Configure and start the admin dashboard
+
+Open another terminal:
 
 ```bash
 cd Admin
 npm install
-cp .env.example .env     # Fill in required environment Variables as guided in the .env.example
+```
+
+Copy `Admin/.env.example` to `.env` and set `VITE_HOST` to the API URL.
+
+```bash
 npm run dev
 ```
 
----
+Vite prints the local URLs for each frontend in its terminal. Keep the API and
+both frontend development servers running while using the application.
 
-## 👨‍💻 Author
+### Create an admin account
 
-**Bishal Singh**
-[LinkedIn](https://linkedin.com/in/bishal-singh292/) | [GitHub](https://github.com/bishal292)
+On the admin dashboard, open the signup page and enter **`1234`** in the admin
+secret key field. This must match `ADMIN_CREATION_SECRET_KEY` in the API's
+`Server/.env` file. The value is intended for local/demo setup; use a strong,
+unique value instead for any deployed environment, and configure the same value
+in that environment's server settings.
 
----
+## Validation
 
-## 📍 License
+Run the API tests from `Server/`:
 
-[MIT License](./LICENCE)
+```bash
+npm test
+```
 
----
+Build or lint either frontend from its directory:
 
-## 💬 Feedback
+```bash
+npm run build
+npm run lint
+```
 
-Have suggestions or feature requests? Feel free to open issues or reach out!
+## Screenshots
+
+<details>
+<summary>Customer experience</summary>
+
+| Screen | Preview |
+| --- | --- |
+| Landing page | ![Customer landing page](./SnapShots/UserLandingPage.png) |
+| Pizza catalog | ![Pizza catalog](./SnapShots/UserHomePageListingPizzas.png) |
+| Pizza customization | ![Pizza customization](./SnapShots/UserCustomizingPizza.png) |
+| Cart | ![Customer cart](./SnapShots/UserViewingCart.png) |
+| Orders | ![Customer orders](./SnapShots/UserViewingOrders.png) |
+| Payment | ![Payment screen](./SnapShots/OrderPaymentScreen.png) |
+
+</details>
+
+<details>
+<summary>Administration</summary>
+
+| Screen | Preview |
+| --- | --- |
+| Dashboard | ![Admin dashboard](./SnapShots/AdminDashboard1.png) |
+| Pizza management | ![Admin pizza list](./SnapShots/AdminPizzaList.png) |
+| Inventory management | ![Admin Inventory List](./SnapShots/AdminInventoryList.png) |
+| Add Inventory item | ![Admin inventory](./SnapShots/AdminAdd_new_Inv_item.png) |
+| Customer management | ![Admin users](./SnapShots/AdminUsersList.png) |
+| Order management | ![Admin orders](./SnapShots/Admin_Viewing_Orders.png) |
+
+</details>
+
+<details>
+<summary>Authentication</summary>
+
+| Screen | Preview |
+| --- | --- |
+| Customer sign in | ![Customer sign in](./SnapShots/userAuth.png) |
+| Customer sign up | ![Customer sign up](./SnapShots/userAuthSignup.png) |
+| Admin sign up | ![Admin sign up](./SnapShots/adminSighnup.png) |
+| Password reset | ![Password reset](./SnapShots/userauthreset.png) |
+
+</details>
+
+## Project documentation
+
+- [Architecture](./ARCHITECTURE.md)
+- [Project structure](./PROJECT_STRUCTURE.md)
+- [Code guidelines](./CODE_GUIDELINES.md)
+- [Server documentation](./Server/README.md)
+
+## Author
+
+**Bishal Singh** · [GitHub](https://github.com/bishal292) ·
+[LinkedIn](https://linkedin.com/in/bishal-singh292/)
+
+## License
+
+See [LICENCE](./LICENCE).
